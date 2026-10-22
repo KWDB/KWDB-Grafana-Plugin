@@ -24,6 +24,9 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Exposed at job level so the signing step can test it in `if:`.
+    env:
+      GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -61,8 +64,6 @@ jobs:
         # repository secrets; unsigned builds are still published.
         if: ${{ env.GRAFANA_ACCESS_POLICY_TOKEN != '' }}
         run: npm run sign
-        env:
-          GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
 
       - name: Package plugin
         id: package
