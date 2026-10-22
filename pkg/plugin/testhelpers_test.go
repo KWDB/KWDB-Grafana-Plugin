@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type mockRows struct {
@@ -93,6 +94,8 @@ func (r *mockRows) Values() ([]any, error) {
 func (r *mockRows) RawValues() [][]byte { return nil }
 
 func (r *mockRows) Conn() *pgx.Conn { return nil }
+
+func (r *mockRows) TypeMap() *pgtype.Map { return pgtype.NewMap() }
 
 func toInt64(v any) int64 {
 	switch n := v.(type) {
