@@ -46,6 +46,8 @@ func TestIsReadOnlyRejectsLexicalBypasses(t *testing.T) {
 		{name: "show sessions", sql: `SHOW SESSIONS`, want: false},
 		{name: "show queries", sql: `SHOW QUERIES`, want: false},
 		{name: "show jobs", sql: `SHOW JOBS`, want: false},
+		{name: "show session variables", sql: `SHOW statement_timeout`, want: true},
+		{name: "show read only variable", sql: `SHOW default_transaction_read_only`, want: true},
 		{name: "parameter placeholder", sql: `SELECT * FROM t WHERE a = $1`, want: true},
 	}
 	for _, tt := range tests {

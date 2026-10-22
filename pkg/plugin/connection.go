@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"strconv"
@@ -46,6 +47,10 @@ func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSetti
 	if err != nil {
 		return nil, fmt.Errorf("could not parse pgx connection string: %w", err)
 	}
+	if cfg.MaxConns > math.MaxInt32 {
+		cfg.MaxConns = math.MaxInt32
+	}
+	//nolint:gosec // cfg.MaxConns is clamped to MaxInt32 above.
 	poolCfg.MaxConns = int32(cfg.MaxConns)
 	poolCfg.MinConns = poolMinConns
 	poolCfg.MaxConnLifetime = time.Duration(cfg.MaxConnLifetime) * time.Second

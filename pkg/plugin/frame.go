@@ -495,7 +495,14 @@ func findTimeColumn(plans []columnPlan, timeColumn string) (int, error) {
 				return i, nil
 			}
 		}
-		return -1, fmt.Errorf("configured time column %q was not returned by the query; available columns: %s",
+		// Builder modes bucket the time column and alias it to "time", so the
+		// configured source column legitimately does not appear in the result.
+		for i := range plans {
+			if plans[i].kind == kindTime && strings.EqualFold(plans[i].name, "time") {
+				return i, nil
+			}
+		}
+		return -1, fmt.Errorf("configured time column %q was not returned by the query and no \"time\" column was found; available columns: %s",
 			timeColumn, strings.Join(columnNames(plans), ", "))
 	}
 	for i := range plans {

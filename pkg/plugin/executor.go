@@ -79,25 +79,18 @@ var forbiddenFunctions = map[string]struct{}{
 	"setval":                  {},
 }
 
-// allowedShowKeywords limits SHOW statements to schema-oriented forms so that
-// cluster and session state (SHOW SESSIONS, SHOW QUERIES, SHOW JOBS, ...) is
-// not exposed through the data source.
-var allowedShowKeywords = map[string]struct{}{
-	"COLUMNS":     {},
-	"CONSTRAINT":  {},
-	"CONSTRAINTS": {},
-	"CREATE":      {},
-	"DATABASE":    {},
-	"DATABASES":   {},
-	"GRANTS":      {},
-	"INDEX":       {},
-	"INDEXES":     {},
-	"SCHEMA":      {},
-	"SCHEMAS":     {},
-	"TABLES":      {},
-	"TIME":        {},
-	"TRANSACTION": {},
-	"ZONE":        {},
+// forbiddenShowKeywords blocks the SHOW forms that expose cluster or session
+// state (other sessions, jobs, traces, backups) instead of schema metadata.
+var forbiddenShowKeywords = map[string]struct{}{
+	"ALL":         {},
+	"BACKUP":      {},
+	"CHANGEFEEDS": {},
+	"JOBS":        {},
+	"QUERIES":     {},
+	"SCHEDULES":   {},
+	"SESSIONS":    {},
+	"STATISTICS":  {},
+	"TRACE":       {},
 }
 
 // IsReadOnly reports whether the SQL statement is a single read-only statement.
@@ -248,7 +241,7 @@ func scanForbiddenSQL(sql string) (string, bool) {
 	return scanShowStatement(sql)
 }
 
-// scanShowStatement restricts SHOW to schema-oriented statements.
+// scanShowStatement blocks SHOW forms that expose cluster or session state.
 func scanShowStatement(sql string) (string, bool) {
 	body := strings.TrimSpace(stripLeadingComments(sql))
 	if len(body) < 4 || !strings.EqualFold(body[:4], "SHOW") {
@@ -265,8 +258,8 @@ func scanShowStatement(sql string) (string, bool) {
 		end = len(rest)
 	}
 	keyword := strings.ToUpper(rest[:end])
-	if _, ok := allowedShowKeywords[keyword]; !ok {
-		return "SHOW " + keyword + " is not allowed; supported forms are SHOW TABLES/CREATE/DATABASES/COLUMNS/SCHEMAS/GRANTS/INDEXES", true
+	if _, blocked := forbiddenShowKeywords[keyword]; blocked {
+		return "SHOW " + keyword + " is not allowed; it exposes cluster or session state", true
 	}
 	return "", false
 }
