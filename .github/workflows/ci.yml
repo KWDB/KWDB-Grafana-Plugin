@@ -81,6 +81,12 @@ jobs:
         if: steps.check-for-backend.outputs.has-backend == 'true'
         run: go test ./pkg/...
 
+      - name: Scan backend dependencies for known vulnerabilities
+        if: steps.check-for-backend.outputs.has-backend == 'true'
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./pkg/...
+
       - name: Check for E2E
         id: check-for-e2e
         run: |
