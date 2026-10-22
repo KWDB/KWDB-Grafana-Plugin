@@ -185,3 +185,47 @@
 **系统性短板**：「能力声明」跑在「实现验证」前面——gapfill 声称 5 种、alerting/annotations 只写进 `plugin.json`、`queryOptions` 从不读取、`>=12.3.0` 未在该版本验证、README 声称微秒精度。根因不是个别 bug，而是缺少「功能 × 数据库函数 × Grafana 面板」的验收矩阵。
 
 **建议**：把能力矩阵固化进 README 与测试 ID；前端 `sqlBuilder.ts` 与后端 `macros.go` 双处生成/改写 SQL，建议加 golden 测试锁住最终展开 SQL。
+
+---
+
+## 8. 修复状态（v1.2.1）
+
+评审后按本报告执行了修复，逐项状态如下。
+
+### 已修复并验证
+
+| ID | 修复内容 | 验证方式 |
+| --- | --- | --- |
+| SEC-01 | 每个连接以 `default_transaction_read_only = on` 启动；默认账号仍兼容 `root`，但 README 明确要求使用只读账号 | 真机 `SHOW default_transaction_read_only` = `on`；`DROP`/`CREATE` 被 KWDB 以只读事务拒绝（SQLSTATE 25006） |
+| SEC-01 | 守卫拒绝 `kwdb_internal.*` / `crdb_internal.*` 及 `pg_sleep`、`pg_read_file`、`nextval`、`set_config` 等函数 | 真机提交 `kwdb_internal.force_log_fatal('x')` 被 400 拒绝且**从未下发数据库** |
+| SEC-02 | 词法扫描支持 `E'...'` 转义、dollar-quote、嵌套块注释 | 单测 8 条绕过/误报用例 + 真机 `SELECT E'\''; DROP TABLE t; --'` 被拒 |
+| SEC-03 / A3 | 连接级 `statement_timeout`（默认 30s，可配置）+ 查询 ctx 截止时间；触顶行数上限即取消查询 | 真机 `SHOW statement_timeout` = 30000；`SELECT *` 达 10 万行后 1.4s 返回并取消 |
+| SEC-07 | `SHOW SESSIONS/QUERIES/JOBS/TRACE/STATISTICS/BACKUP/ALL` 被拒 | 真机 400 |
+| A2 | 宏改为括号配对扫描，展开体加括号 | 单测覆盖 `CAST(...)`、嵌套函数、`NOT $__timeFilter(...)` |
+| F1 | gapfill 插值改为小写带引号字符串或数值常量，新增常量值输入 | 真机 `interpolate(avg(voltage), 0)` 成功（192 行）；jest 覆盖生成 SQL |
+| F2 | latest 时间列随 `latestFunc` 选择 `first`/`last` | 真机逐 device 校验 `first(time)` == `min(time)`（4/4 一致） |
+| F3 | 扫描期数据库错误归类为 `downstream` | 真机 `timeout`/`SQLSTATE` 错误均报 `downstream` |
+| SEC-05 | 错误信息脱敏连接串中的凭据 | 单测 + 真机（元数据错误不再带 DSN） |
+| A5 | `date` 映射为时间字段；`uuid`/`interval`/`time` 可读化 | 单测覆盖 OID 1082/2950/1186 |
+| A6 | 关系表 DDL 中的 `INDEX`/`CONSTRAINT`/`FOREIGN KEY` 等不再被当作列 | 单测 + 保留字黑名单 |
+| A8 | 空查询返回明确提示 | 真机 400「query is empty」 |
+| F9 | 截断 notice 说明按「读取行数（透视前）」计 | 真机 `schema.meta.notices` 存在 |
+| F10 | 指定时间列不存在时报错；builder 生成的 `time` 别名仍被接受 | 单测 + E2E downsampling/gapfill 通过 |
+| SEC-06 | `/tag-values` 加 `LIMIT 10000` | 单测断言 SQL 形态 |
+| F8/A16 | 移除 `queryOptions` 无效声明；`queryTimeout`/`maxRows` 可在配置页设置 | 配置页单测 + 真机 |
+| A9 | `grafanaDependency` 收紧为 `>=13.1.0` | plugin.json |
+| F7 | README 精度表述改为毫秒级并说明 `TIMESTAMP(6/9)` | 文档 |
+| F4 | E2E 参数化（`KWDB_E2E_*`）并改为断言 `/api/ds/query` 响应体 | 真实 schema 9 passed；demo 默认 5 passed / 4 skipped |
+| F5/F6 | 版本统一为 1.2.1，CHANGELOG 补齐 1.2.1 | 构建产物 `dist/plugin.json` = 1.2.1 |
+| SEC-11 | golangci-lint 启用 gosec；CI 增加 govulncheck；Dependabot 放开 gomod 依赖 | 本地 `golangci-lint run` 0 issues |
+
+### 仍未完成（需要环境或权限）
+
+| 项 | 原因 | 后续动作 |
+| --- | --- | --- |
+| 签名与 `MANIFEST.txt` | 需要 `GRAFANA_ACCESS_POLICY_TOKEN` | 用 Release workflow 出包并在默认 Grafana 上验证 |
+| 真实 TLS（verify-ca/verify-full） | 没有启用 TLS 的 KWDB 实例 | 在隔离环境验证证书路径与失败提示 |
+| Grafana 13.1 以外的版本 | 本机只有 13.1.0 | CI e2e matrix 补跑 |
+| annotations / alerting 实测 | 未配置真实告警与注解 | 补 E2E 与告警评估用例 |
+| 依赖 CVE 扫描结果 | 需要联网在 CI 运行 | 由新增的 govulncheck 步骤覆盖 |
+| gapfill 长区间性能 | KWDB `time_bucket_gapfill` 在 470 万行上 30 天区间 > 30s | 已在 README 说明并给出超时建议；E2E 用 1 天区间 |
