@@ -28,6 +28,18 @@ go vet ./pkg/...
 golangci-lint run ./pkg/...
 ```
 
+The backend suite runs without a database. `TestRemoteKWDBIntegration` is
+skipped unless `KWDB_TEST_DSN` points at a disposable KWDB instance, for
+example:
+
+```bash
+KWDB_TEST_DSN='postgres://root@localhost:26257/defaultdb?sslmode=disable' \
+  go test ./pkg/... -run Integration -v
+```
+
+That test creates and drops its own tables; never point it at a shared
+database.
+
 ## Local Grafana environment
 
 ```bash
@@ -57,10 +69,15 @@ environment:
 
 ```bash
 KWDB_E2E_TABLE=ts_db.charger_data \
+KWDB_E2E_TIME_COLUMN=ts \
 KWDB_E2E_COLUMNS='ts, charger_id, current_amp, voltage_v' \
 KWDB_E2E_METRIC=voltage_v \
+KWDB_E2E_TAG=charger_id \
 yarn e2e
 ```
+
+The suite also asserts query results through the Grafana API, so a failing
+query surfaces as a failed assertion rather than a successful HTTP call.
 
 The local Playwright config uses the system Chrome installation and expects
 Grafana on `http://localhost:3001`.

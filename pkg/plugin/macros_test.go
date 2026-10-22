@@ -21,7 +21,7 @@ func TestExpandMacros(t *testing.T) {
 		{
 			name: "time filter",
 			sql:  "SELECT * FROM sensors WHERE $__timeFilter(ts)",
-			want: "SELECT * FROM sensors WHERE ts >= '2026-01-01 00:00:00'::TIMESTAMP AND ts <= '2026-01-01 01:00:00'::TIMESTAMP",
+			want: "SELECT * FROM sensors WHERE (ts >= '2026-01-01 00:00:00'::TIMESTAMP AND ts <= '2026-01-01 01:00:00'::TIMESTAMP)",
 		},
 		{
 			name: "time from and to",
@@ -41,7 +41,32 @@ func TestExpandMacros(t *testing.T) {
 		{
 			name: "combined macros",
 			sql:  "SELECT $__timeGroup(k_timestamp, '1m') AS time FROM sensors WHERE $__timeFilter(k_timestamp)",
-			want: "SELECT time_bucket(k_timestamp, '1m') AS time FROM sensors WHERE k_timestamp >= '2026-01-01 00:00:00'::TIMESTAMP AND k_timestamp <= '2026-01-01 01:00:00'::TIMESTAMP",
+			want: "SELECT time_bucket(k_timestamp, '1m') AS time FROM sensors WHERE (k_timestamp >= '2026-01-01 00:00:00'::TIMESTAMP AND k_timestamp <= '2026-01-01 01:00:00'::TIMESTAMP)",
+		},
+		{
+			name: "time filter with nested cast",
+			sql:  "SELECT * FROM sensors WHERE $__timeFilter(CAST(ts AS TIMESTAMP))",
+			want: "SELECT * FROM sensors WHERE (CAST(ts AS TIMESTAMP) >= '2026-01-01 00:00:00'::TIMESTAMP AND CAST(ts AS TIMESTAMP) <= '2026-01-01 01:00:00'::TIMESTAMP)",
+		},
+		{
+			name: "time filter with nested function",
+			sql:  "SELECT * FROM sensors WHERE $__timeFilter(time_bucket(ts, '5m'))",
+			want: "SELECT * FROM sensors WHERE (time_bucket(ts, '5m') >= '2026-01-01 00:00:00'::TIMESTAMP AND time_bucket(ts, '5m') <= '2026-01-01 01:00:00'::TIMESTAMP)",
+		},
+		{
+			name: "negated time filter keeps its meaning",
+			sql:  "SELECT * FROM sensors WHERE NOT $__timeFilter(ts)",
+			want: "SELECT * FROM sensors WHERE NOT (ts >= '2026-01-01 00:00:00'::TIMESTAMP AND ts <= '2026-01-01 01:00:00'::TIMESTAMP)",
+		},
+		{
+			name: "time group with nested cast",
+			sql:  "SELECT $__timeGroup(CAST(ts AS TIMESTAMP), '5m')",
+			want: "SELECT time_bucket(CAST(ts AS TIMESTAMP), '5m')",
+		},
+		{
+			name: "semicolon inside string literal is untouched",
+			sql:  "SELECT * FROM t WHERE note = 'a;b' AND $__timeFilter(ts)",
+			want: "SELECT * FROM t WHERE note = 'a;b' AND (ts >= '2026-01-01 00:00:00'::TIMESTAMP AND ts <= '2026-01-01 01:00:00'::TIMESTAMP)",
 		},
 		{
 			name: "no macros",

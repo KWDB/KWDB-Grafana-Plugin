@@ -8,17 +8,20 @@
   "annotations": true,
   "backend": true,
   "executable": "gpx_kwdb_tsdb_datasource",
-  "queryOptions": {
-    "maxDataPoints": true,
-    "minInterval": true
-  },
   "info": {
     "description": "Connect Grafana to KaiwuDB and KWDB time-series engines. Query, visualize, and analyze time-series data with a visual SQL builder or raw SQL.",
     "author": {
       "name": "Kaiwudb",
       "url": "https://www.kaiwudb.com"
     },
-    "keywords": ["datasource", "time series", "TSDB", "SQL", "KWDB", "KaiwuDB"],
+    "keywords": [
+      "datasource",
+      "time series",
+      "TSDB",
+      "SQL",
+      "KWDB",
+      "KaiwuDB"
+    ],
     "logos": {
       "small": "img/logo.svg",
       "large": "img/logo.svg"
@@ -47,7 +50,7 @@
     "updated": "%TODAY%"
   },
   "dependencies": {
-    "grafanaDependency": ">=12.3.0",
+    "grafanaDependency": ">=13.1.0",
     "plugins": []
   }
 }

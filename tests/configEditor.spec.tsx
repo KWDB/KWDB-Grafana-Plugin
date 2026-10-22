@@ -36,6 +36,22 @@ describe('ConfigEditor', () => {
     expect(screen.getByLabelText('SSL Mode')).toBeInTheDocument();
     expect(screen.getByLabelText('SSL Root Cert')).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
+    expect(screen.getByLabelText('Query timeout (s)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Max rows')).toBeInTheDocument();
+  });
+
+  it('persists the query timeout and row cap as numbers', () => {
+    const { onOptionsChange } = renderConfig();
+
+    fireEvent.change(screen.getByLabelText('Query timeout (s)'), { target: { value: '45' } });
+    expect(onOptionsChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ jsonData: expect.objectContaining({ queryTimeout: 45 }) })
+    );
+
+    fireEvent.change(screen.getByLabelText('Max rows'), { target: { value: '5000' } });
+    expect(onOptionsChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ jsonData: expect.objectContaining({ maxRows: 5000 }) })
+    );
   });
 
   it('updates jsonData when host, port, database and user change', () => {

@@ -7,6 +7,7 @@ import type { KwdbQuery, MetricSpec } from '../../types';
 import { SqlPreview } from './SqlPreview';
 import { ColumnPicker } from './shared/ColumnPicker';
 import { MetricRow } from './shared/MetricRow';
+import { tableChangePatch, windowTypeChangePatch } from './shared/queryChanges';
 import { TableSelector } from './shared/TableSelector';
 import { TimeColumnPicker } from './shared/TimeColumnPicker';
 import { useTableColumns } from './shared/useTableColumns';
@@ -151,7 +152,16 @@ export function WindowEventEditor({ datasource, query, onChange }: Props) {
   return (
     <VerticalGroup spacing="md">
       <InlineField label="Table" labelWidth={12}>
-        <TableSelector datasource={datasource} value={query.table} onChange={(table) => updateQuery({ table })} />
+        <TableSelector
+          datasource={datasource}
+          value={query.table}
+          onChange={(table) => {
+            const patch = tableChangePatch(table, query.table);
+            if (patch) {
+              updateQuery(patch);
+            }
+          }}
+        />
       </InlineField>
       <InlineField label="Time column" labelWidth={12}>
         <TimeColumnPicker
@@ -165,7 +175,12 @@ export function WindowEventEditor({ datasource, query, onChange }: Props) {
           aria-label="Window type"
           options={WINDOW_TYPES.map((type) => ({ label: type, value: type }))}
           value={windowType}
-          onChange={(item) => updateQuery({ windowType: item.value ?? 'TIME_WINDOW' })}
+          onChange={(item) => {
+            const patch = windowTypeChangePatch(item.value ?? 'TIME_WINDOW', windowType);
+            if (patch) {
+              updateQuery(patch);
+            }
+          }}
           width={24}
           menuShouldPortal={false}
         />

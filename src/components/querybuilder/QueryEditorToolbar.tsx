@@ -68,7 +68,11 @@ interface Props {
 export function QueryEditorToolbar({ query, onChange }: Props) {
   const onModeChange = (mode: KwdbQueryMode) => {
     const next = { ...query, ...defaultsForMode(query, mode) };
-    if (mode !== 'raw') {
+    if (mode === 'raw') {
+      // Prefer the SQL the user wrote by hand over whatever the builder last produced.
+      next.rawSql = query.customRawSql ?? query.rawSql ?? '';
+    } else {
+      // Keep the builder preview in sync without touching the saved custom SQL.
       next.rawSql = buildSql(next);
     }
     onChange(next);

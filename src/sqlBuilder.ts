@@ -1,4 +1,4 @@
-import type { KwdbQuery, MetricSpec } from './types';
+import type { KwdbInterpolateMode, KwdbQuery, MetricSpec } from './types';
 
 const INDENT = '       ';
 
@@ -19,12 +19,28 @@ function quoteString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-function interpolateModeLiteral(mode: KwdbQuery['interpolateMode']): string {
-  const resolved = mode ?? 'linear';
-  if (resolved === 'linear' || resolved === 'constant') {
-    return quoteString(resolved);
+const INTERPOLATE_MODES: readonly KwdbInterpolateMode[] = ['linear', 'prev', 'next', 'null', 'constant'];
+
+/**
+ * Normalizes the interpolation mode, including uppercase values such as
+ * `PREV` / `NEXT` / `NULL` that older dashboards may still contain.
+ */
+export function normalizeInterpolateMode(mode?: string): KwdbInterpolateMode {
+  const normalized = mode?.trim().toLowerCase();
+  return INTERPOLATE_MODES.find((item) => item === normalized) ?? 'linear';
+}
+
+function normalizeInterpolateConstant(value?: number): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function interpolateModeLiteral(query: KwdbQuery): string {
+  const mode = normalizeInterpolateMode(query.interpolateMode);
+  if (mode === 'constant') {
+    return String(normalizeInterpolateConstant(query.interpolateConstant));
   }
-  return resolved;
+  return quoteString(mode);
 }
 
 function aggregationExpr(metric: MetricSpec): string {
@@ -53,9 +69,9 @@ function metricExpr(metric: MetricSpec): string {
   return `${expr} AS ${quoteIdent(alias || metricAlias(metric, metric.aggregation))}`;
 }
 
-function gapfillMetricExpr(metric: MetricSpec, mode: KwdbQuery['interpolateMode']): string {
+function gapfillMetricExpr(metric: MetricSpec, query: KwdbQuery): string {
   const inner = aggregationExpr(metric);
-  const expr = `interpolate(${inner}, ${interpolateModeLiteral(mode)})`;
+  const expr = `interpolate(${inner}, ${interpolateModeLiteral(query)})`;
   const alias = metric.alias?.trim();
   if (metric.aggregation === 'none' && !alias) {
     return expr;
@@ -67,6 +83,11 @@ function latestMetricExpr(metric: MetricSpec, latestFunc: KwdbQuery['latestFunc'
   const func = latestFunc ?? 'last';
   const expr = `${func}(${quoteIdent(metric.column)})`;
   return `${expr} AS ${quoteIdent(metric.alias?.trim() || `latest_${metric.column}`)}`;
+}
+
+function latestTimeExpr(query: KwdbQuery, timeColumn: string): string {
+  const func = query.latestFunc === 'first' || query.latestFunc === 'first_row' ? 'first' : 'last';
+  return `${func}(${quoteIdent(timeColumn)}) AS "time"`;
 }
 
 function timeExpr(functionName: 'time_bucket' | 'time_bucket_gapfill', query: KwdbQuery): string {
@@ -128,7 +149,7 @@ export function buildGapfillSql(query: KwdbQuery): string {
   const items = [
     `${timeExpr('time_bucket_gapfill', query)} AS "time"`,
     ...tags.map(quoteIdent),
-    ...metrics.map((metric) => gapfillMetricExpr(metric, query.interpolateMode)),
+    ...metrics.map((metric) => gapfillMetricExpr(metric, query)),
   ];
   const { groupBy, orderBy } = groupAndOrderBy(tags);
   return [
@@ -152,7 +173,7 @@ export function buildLatestSql(query: KwdbQuery): string {
   const items = [
     ...tags.map(quoteIdent),
     ...metrics.map((metric) => latestMetricExpr(metric, query.latestFunc)),
-    `last(${quoteIdent(timeColumn)}) AS "time"`,
+    latestTimeExpr(query, timeColumn),
   ];
   const lines = [
     ...selectLines(items),
