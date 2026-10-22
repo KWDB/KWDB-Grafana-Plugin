@@ -27,6 +27,11 @@ const (
 	defaultPoolMaxConnLifetime = 3600 // 1h
 	defaultPoolMaxConnIdleTime = 900  // 15min
 	defaultPoolConnectTimeout  = 5
+	defaultQueryTimeout        = 30 // 30s statement timeout
+
+	// applicationName is reported by KWDB in SHOW SESSIONS / SHOW QUERIES so
+	// operators can attribute connections to the Grafana plugin.
+	applicationName = "grafana-kwdb-tsdb-datasource"
 )
 
 // NewDatasource creates a datasource instance with a KWDB pgx connection pool.
@@ -46,6 +51,7 @@ func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSetti
 	poolCfg.MaxConnLifetime = time.Duration(cfg.MaxConnLifetime) * time.Second
 	poolCfg.MaxConnIdleTime = time.Duration(cfg.MaxConnIdleTime) * time.Second
 	poolCfg.ConnConfig.ConnectTimeout = time.Duration(cfg.ConnectTimeout) * time.Second
+	applySessionSettings(poolCfg, *cfg)
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
@@ -53,9 +59,51 @@ func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSetti
 	}
 
 	return &Datasource{
-		pool:    pool,
-		handler: newMetadataHandler(pool, cfg.Database),
+		pool:         pool,
+		handler:      newMetadataHandler(pool, cfg.Database),
+		queryTimeout: queryTimeoutDuration(*cfg),
+		maxRows:      maxRowsValue(*cfg),
 	}, nil
+}
+
+// applySessionSettings enforces read-only statements and a statement timeout on
+// every pooled connection. Both settings are applied as startup parameters so
+// they cannot be bypassed by a query and so the plugin never has to run
+// additional statements after connecting.
+func applySessionSettings(poolCfg *pgxpool.Config, cfg models.DataSourceSettings) {
+	if poolCfg.ConnConfig.RuntimeParams == nil {
+		poolCfg.ConnConfig.RuntimeParams = map[string]string{}
+	}
+	poolCfg.ConnConfig.RuntimeParams["application_name"] = applicationName
+	poolCfg.ConnConfig.RuntimeParams["default_transaction_read_only"] = "on"
+	if timeout := queryTimeoutDuration(cfg); timeout > 0 {
+		poolCfg.ConnConfig.RuntimeParams["statement_timeout"] = strconv.FormatInt(timeout.Milliseconds(), 10)
+	}
+}
+
+// queryTimeoutDuration resolves the effective per-query timeout. Zero selects
+// the default; a negative value disables the timeout.
+func queryTimeoutDuration(cfg models.DataSourceSettings) time.Duration {
+	seconds := cfg.QueryTimeout
+	if seconds == 0 {
+		seconds = defaultQueryTimeout
+	}
+	if seconds < 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+// maxRowsValue resolves the effective per-frame row cap. Zero selects the
+// default; a negative value disables the cap.
+func maxRowsValue(cfg models.DataSourceSettings) int {
+	if cfg.MaxRows == 0 {
+		return DefaultMaxRows
+	}
+	if cfg.MaxRows < 0 {
+		return 0
+	}
+	return cfg.MaxRows
 }
 
 func applyDefaults(cfg *models.DataSourceSettings) {

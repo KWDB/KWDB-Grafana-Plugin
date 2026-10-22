@@ -3,12 +3,16 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	"github.com/grafana/grafana-plugin-sdk-go/experimental/concurrent"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kaiwudb/kwdb-tsdb-datasource/pkg/models"
 )
@@ -24,6 +28,11 @@ var (
 type Datasource struct {
 	pool    *pgxpool.Pool
 	handler backend.CallResourceHandler
+	// queryTimeout bounds a single query; zero disables the context deadline
+	// (the connection-level statement_timeout still applies).
+	queryTimeout time.Duration
+	// maxRows caps the rows buffered per frame; zero disables the cap.
+	maxRows int
 }
 
 // resolveFormat returns the effective output format for a query. Builder
@@ -53,15 +62,32 @@ func (d *Datasource) query(ctx context.Context, query backend.DataQuery) backend
 		return backend.ErrDataResponseWithSource(backend.StatusBadRequest, backend.ErrorSourcePlugin, fmt.Sprintf("json unmarshal: %v", err.Error()))
 	}
 
+	if strings.TrimSpace(qm.RawSql) == "" {
+		return backend.ErrDataResponseWithSource(backend.StatusBadRequest, backend.ErrorSourcePlugin,
+			"query is empty: select a table, time column and at least one metric, or write a statement in Raw SQL mode")
+	}
+
 	sql := ExpandMacros(qm.RawSql, query.TimeRange)
-	if !IsReadOnly(sql) {
-		return backend.ErrDataResponseWithSource(backend.StatusBadRequest, backend.ErrorSourcePlugin, "only read-only queries (SELECT/SHOW/EXPLAIN/WITH) are allowed")
+	if reason := ReadOnlyViolation(sql); reason != "" {
+		return backend.ErrDataResponseWithSource(backend.StatusBadRequest, backend.ErrorSourcePlugin, reason)
+	}
+	if query.TimeRange.From.After(query.TimeRange.To) {
+		return backend.ErrDataResponseWithSource(backend.StatusBadRequest, backend.ErrorSourcePlugin,
+			"invalid time range: from is after to")
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if d.queryTimeout > 0 {
+		timeoutCtx, timeoutCancel := context.WithTimeout(ctx, d.queryTimeout)
+		defer timeoutCancel()
+		ctx = timeoutCtx
 	}
 
 	rows, err := ExecuteQuery(ctx, d.pool, sql)
 	if err != nil {
 		backend.Logger.FromContext(ctx).Error("KWDB query failed", "refId", query.RefID, "error", err)
-		return backend.DataResponse{Error: err, ErrorSource: backend.ErrorSourceDownstream}
+		return backend.DataResponse{Error: errors.New(sanitizeError(err)), ErrorSource: errorSourceFor(err)}
 	}
 	frames, err := RowsToFrames(rows, FrameOptions{
 		Format:     resolveFormat(qm.Mode, qm.Format),
@@ -69,11 +95,14 @@ func (d *Datasource) query(ctx context.Context, query backend.DataQuery) backend
 		TimeColumn: qm.TimeColumn,
 		Tags:       qm.Tags,
 		SplitByTag: qm.SplitByTag,
-		MaxRows:    DefaultMaxRows,
+		MaxRows:    d.maxRows,
+		// Cancelling the context makes pgx abort the statement instead of
+		// draining every remaining row after the row cap was hit.
+		OnTruncate: cancel,
 	})
 	if err != nil {
-		backend.Logger.FromContext(ctx).Error("KWDB frame conversion failed", "refId", query.RefID, "error", err)
-		return backend.DataResponse{Error: err, ErrorSource: backend.ErrorSourcePlugin}
+		backend.Logger.FromContext(ctx).Error("KWDB query failed", "refId", query.RefID, "error", err)
+		return backend.DataResponse{Error: errors.New(sanitizeError(err)), ErrorSource: errorSourceFor(err)}
 	}
 	response := make(data.Frames, 0, len(frames))
 	for _, frame := range frames {
@@ -83,6 +112,20 @@ func (d *Datasource) query(ctx context.Context, query backend.DataQuery) backend
 	return backend.DataResponse{Frames: response}
 }
 
+// errorSourceFor classifies an error as produced by the database (downstream)
+// or by the plugin itself. Errors surfaced by pgx while scanning rows are
+// database errors even though they are raised inside the frame conversion.
+func errorSourceFor(err error) backend.ErrorSource {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return backend.ErrorSourceDownstream
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return backend.ErrorSourceDownstream
+	}
+	return backend.ErrorSourcePlugin
+}
+
 // CheckHealth verifies connectivity by executing SELECT 1.
 func (d *Datasource) CheckHealth(ctx context.Context, _ *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
 	if d.pool == nil {
@@ -90,17 +133,17 @@ func (d *Datasource) CheckHealth(ctx context.Context, _ *backend.CheckHealthRequ
 	}
 	rows, err := d.pool.Query(ctx, "SELECT 1")
 	if err != nil {
-		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: err.Error()}, nil
+		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: sanitizeError(err)}, nil
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var one int32
 		if err := rows.Scan(&one); err != nil {
-			return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: err.Error()}, nil
+			return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: sanitizeError(err)}, nil
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: err.Error()}, nil
+		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: sanitizeError(err)}, nil
 	}
 	return &backend.CheckHealthResult{
 		Status:  backend.HealthStatusOk,

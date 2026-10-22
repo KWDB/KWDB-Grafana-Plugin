@@ -54,7 +54,7 @@ func (h *metadataHandler) handleTables(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.querier.Query(r.Context(), fmt.Sprintf("SHOW TABLES FROM %s", quoteIdent(h.database)))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, sanitizeError(err), http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -63,7 +63,7 @@ func (h *metadataHandler) handleTables(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		values, err := rows.Values()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, sanitizeError(err), http.StatusInternalServerError)
 			return
 		}
 		if len(values) > 0 {
@@ -75,7 +75,7 @@ func (h *metadataHandler) handleTables(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, sanitizeError(err), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, tables)
@@ -95,7 +95,7 @@ func (h *metadataHandler) handleColumns(w http.ResponseWriter, r *http.Request) 
 
 	infos, err := h.loadTableColumns(r.Context(), table)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, sanitizeError(err), http.StatusInternalServerError)
 		return
 	}
 	if infos == nil {
@@ -157,7 +157,7 @@ func (h *metadataHandler) handleTagValues(w http.ResponseWriter, r *http.Request
 
 	infos, err := h.loadTableColumns(r.Context(), table)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, sanitizeError(err), http.StatusInternalServerError)
 		return
 	}
 	isTag := false
@@ -173,12 +173,12 @@ func (h *metadataHandler) handleTagValues(w http.ResponseWriter, r *http.Request
 	}
 
 	sql := fmt.Sprintf(
-		"SELECT DISTINCT %s FROM %s.%s ORDER BY %s",
-		quoteIdent(column), quoteIdent(h.database), quoteIdent(table), quoteIdent(column),
+		"SELECT DISTINCT %s FROM %s.%s ORDER BY %s LIMIT %d",
+		quoteIdent(column), quoteIdent(h.database), quoteIdent(table), quoteIdent(column), tagValuesLimit,
 	)
 	rows, err := h.querier.Query(r.Context(), sql)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, sanitizeError(err), http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -187,7 +187,7 @@ func (h *metadataHandler) handleTagValues(w http.ResponseWriter, r *http.Request
 	for rows.Next() {
 		row, err := rows.Values()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, sanitizeError(err), http.StatusInternalServerError)
 			return
 		}
 		if len(row) > 0 && row[0] != nil {
@@ -195,7 +195,7 @@ func (h *metadataHandler) handleTagValues(w http.ResponseWriter, r *http.Request
 		}
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, sanitizeError(err), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, values)
@@ -204,12 +204,39 @@ func (h *metadataHandler) handleTagValues(w http.ResponseWriter, r *http.Request
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, sanitizeError(err), http.StatusInternalServerError)
 	}
 }
 
 func quoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
+// tagValuesLimit bounds the number of distinct tag values returned for a
+// template variable so a high-cardinality tag cannot exhaust plugin memory.
+const tagValuesLimit = 10000
+
+// tableConstraintKeywords are DDL clauses that start with an unquoted keyword
+// and must not be mistaken for column definitions.
+var tableConstraintKeywords = map[string]struct{}{
+	"CHECK":      {},
+	"CONSTRAINT": {},
+	"EXCLUDE":    {},
+	"FAMILY":     {},
+	"FOREIGN":    {},
+	"INDEX":      {},
+	"INDEXES":    {},
+	"INVERTED":   {},
+	"KEY":        {},
+	"LIKE":       {},
+	"PERIOD":     {},
+	"PRIMARY":    {},
+	"UNIQUE":     {},
+}
+
+func isTableConstraintKeyword(word string) bool {
+	_, ok := tableConstraintKeywords[strings.ToUpper(word)]
+	return ok
 }
 
 type columnDef struct {
@@ -308,6 +335,12 @@ func parseColumnDef(segment string) (columnDef, bool) {
 	}
 	name := match[1]
 	if name == "" {
+		// Unquoted identifiers can be table-level clauses such as
+		// "INDEX ix (col)" or "FOREIGN KEY (col) REFERENCES ...", which the
+		// column regex would otherwise turn into phantom columns.
+		if isTableConstraintKeyword(match[2]) {
+			return columnDef{}, false
+		}
 		name = match[2]
 	}
 	name = strings.ReplaceAll(name, `""`, `"`)
