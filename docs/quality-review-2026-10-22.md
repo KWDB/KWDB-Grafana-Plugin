@@ -215,7 +215,7 @@
 | F8/A16 | 移除 `queryOptions` 无效声明；`queryTimeout`/`maxRows` 可在配置页设置 | 配置页单测 + 真机 |
 | A9 | `grafanaDependency` 收紧为 `>=13.1.0` | plugin.json |
 | F7 | README 精度表述改为毫秒级并说明 `TIMESTAMP(6/9)` | 文档 |
-| F4 | E2E 参数化（`KWDB_E2E_*`）并改为断言 `/api/ds/query` 响应体 | 真实 schema 9 passed；demo 默认 5 passed / 4 skipped |
+| F4 | E2E 参数化（`KWDB_E2E_*`）并改为断言 `/api/ds/query` 响应体 | 真实 schema 9 passed；demo 默认 5 passed / 4 skipped；CI matrix（Grafana 13.1.8 / 13.2.4 / nightly）全绿 |
 | F5/F6 | 版本统一为 1.2.1，CHANGELOG 补齐 1.2.1 | 构建产物 `dist/plugin.json` = 1.2.1 |
 | SEC-11 | golangci-lint 启用 gosec；CI 增加 govulncheck；Dependabot 放开 gomod 依赖 | 本地 `golangci-lint run` 0 issues |
 
@@ -225,7 +225,7 @@
 | --- | --- | --- |
 | 签名与 `MANIFEST.txt` | 需要 `GRAFANA_ACCESS_POLICY_TOKEN` | 用 Release workflow 出包并在默认 Grafana 上验证 |
 | 真实 TLS（verify-ca/verify-full） | 没有启用 TLS 的 KWDB 实例 | 在隔离环境验证证书路径与失败提示 |
-| Grafana 13.1 以外的版本 | 本机只有 13.1.0 | CI e2e matrix 补跑 |
+| Grafana 13.1 以外的版本 | 本机只有 13.1.0 | 已由 CI e2e matrix 覆盖 13.1.8 / 13.2.4 / nightly |
 | annotations / alerting 实测 | 未配置真实告警与注解 | 补 E2E 与告警评估用例 |
-| 依赖 CVE 扫描结果 | 需要联网在 CI 运行 | 由新增的 govulncheck 步骤覆盖 |
+| 依赖 CVE 扫描 | 本机无法下载新工具链；CI 扫描报告标准库 CVE 需更新的 Go 补丁版本 | 已加入 govulncheck（当前为 advisory）：待 Go 工具链升级到修复版本后改为阻断 |
 | gapfill 长区间性能 | KWDB `time_bucket_gapfill` 在 470 万行上 30 天区间 > 30s | 已在 README 说明并给出超时建议；E2E 用 1 天区间 |
