@@ -6,7 +6,13 @@ import { KwdbDataSourceOptions, KwdbSecureJsonData } from '../types';
 
 type Props = DataSourcePluginOptionsEditorProps<KwdbDataSourceOptions, KwdbSecureJsonData>;
 
-type NumericJsonDataField = 'maxConns' | 'maxConnLifetime' | 'maxConnIdleTime' | 'connectTimeout';
+type NumericJsonDataField =
+  | 'maxConns'
+  | 'maxConnLifetime'
+  | 'maxConnIdleTime'
+  | 'connectTimeout'
+  | 'queryTimeout'
+  | 'maxRows';
 
 const SSL_MODE_OPTIONS: Array<{ label: string; value: NonNullable<KwdbDataSourceOptions['sslMode']> }> = [
   { label: 'disable', value: 'disable' },
@@ -175,6 +181,36 @@ export function ConfigEditor(props: Props) {
             value={jsonData.connectTimeout ?? ''}
             onChange={onNumericChange('connectTimeout')}
             placeholder="5"
+            width={12}
+          />
+        </InlineField>
+      </InlineFieldRow>
+      <InlineFieldRow>
+        <InlineField
+          label="Query timeout (s)"
+          labelWidth={16}
+          tooltip="Per-statement timeout in seconds, enforced as statement_timeout and a query deadline (default: 30, -1 disables)"
+        >
+          <Input
+            id="config-editor-query-timeout"
+            type="number"
+            value={jsonData.queryTimeout ?? ''}
+            onChange={onNumericChange('queryTimeout')}
+            placeholder="30"
+            width={12}
+          />
+        </InlineField>
+        <InlineField
+          label="Max rows"
+          labelWidth={18}
+          tooltip="Rows buffered per frame before the query is cancelled (default: 100000, -1 disables)"
+        >
+          <Input
+            id="config-editor-max-rows"
+            type="number"
+            value={jsonData.maxRows ?? ''}
+            onChange={onNumericChange('maxRows')}
+            placeholder="100000"
             width={12}
           />
         </InlineField>

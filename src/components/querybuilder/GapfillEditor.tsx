@@ -1,18 +1,33 @@
 import React from 'react';
-import { Button, InlineField, Select, VerticalGroup } from '@grafana/ui';
+import { Button, InlineField, Input, Select, VerticalGroup } from '@grafana/ui';
 
 import type { KwdbDataSource } from '../../datasource';
-import { buildSql } from '../../sqlBuilder';
+import { buildSql, normalizeInterpolateMode } from '../../sqlBuilder';
 import type { KwdbQuery, MetricSpec } from '../../types';
 import { SqlPreview } from './SqlPreview';
 import { ColumnPicker } from './shared/ColumnPicker';
 import { IntervalPicker } from './shared/IntervalPicker';
 import { MetricRow } from './shared/MetricRow';
+import { tableChangePatch } from './shared/queryChanges';
 import { TableSelector } from './shared/TableSelector';
 import { TimeColumnPicker } from './shared/TimeColumnPicker';
 import { useTableColumns } from './shared/useTableColumns';
 
-const INTERPOLATE_MODES: Array<NonNullable<KwdbQuery['interpolateMode']>> = ['linear', 'PREV', 'NEXT', 'constant', 'NULL'];
+const INTERPOLATE_MODES: Array<NonNullable<KwdbQuery['interpolateMode']>> = [
+  'linear',
+  'prev',
+  'next',
+  'null',
+  'constant',
+];
+
+function parseConstantValue(raw: string): number | undefined {
+  if (!raw.trim()) {
+    return undefined;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
+}
 
 interface Props {
   datasource: KwdbDataSource;
@@ -22,6 +37,7 @@ interface Props {
 
 export function GapfillEditor({ datasource, query, onChange }: Props) {
   const columns = useTableColumns(datasource, query.table);
+  const interpolateMode = normalizeInterpolateMode(query.interpolateMode);
 
   const updateQuery = (patch: Partial<KwdbQuery>) => {
     const next = { ...query, ...patch };
@@ -45,7 +61,16 @@ export function GapfillEditor({ datasource, query, onChange }: Props) {
   return (
     <VerticalGroup spacing="md">
       <InlineField label="Table" labelWidth={12}>
-        <TableSelector datasource={datasource} value={query.table} onChange={(table) => updateQuery({ table })} />
+        <TableSelector
+          datasource={datasource}
+          value={query.table}
+          onChange={(table) => {
+            const patch = tableChangePatch(table, query.table);
+            if (patch) {
+              updateQuery(patch);
+            }
+          }}
+        />
       </InlineField>
       <InlineField label="Time column" labelWidth={12}>
         <TimeColumnPicker
@@ -61,12 +86,23 @@ export function GapfillEditor({ datasource, query, onChange }: Props) {
         <Select<NonNullable<KwdbQuery['interpolateMode']>>
           aria-label="Interpolation mode"
           options={INTERPOLATE_MODES.map((mode) => ({ label: mode, value: mode }))}
-          value={query.interpolateMode ?? 'linear'}
+          value={interpolateMode}
           onChange={(item) => updateQuery({ interpolateMode: item.value ?? 'linear' })}
           width={20}
           menuShouldPortal={false}
         />
       </InlineField>
+      {interpolateMode === 'constant' && (
+        <InlineField label="Constant value" labelWidth={12} tooltip="Numeric value used for gaps. Defaults to 0.">
+          <Input
+            aria-label="Constant value"
+            type="number"
+            value={query.interpolateConstant ?? 0}
+            onChange={(event) => updateQuery({ interpolateConstant: parseConstantValue(event.currentTarget.value) })}
+            width={24}
+          />
+        </InlineField>
+      )}
       <InlineField label="Tags" labelWidth={12}>
         <ColumnPicker columns={columns} value={query.tags ?? []} onChange={(tags) => updateQuery({ tags })} />
       </InlineField>

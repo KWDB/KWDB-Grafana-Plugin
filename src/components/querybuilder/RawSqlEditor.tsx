@@ -16,8 +16,8 @@ export function RawSqlEditor({ query, onChange }: Props) {
         language="sql"
         height={220}
         showLineNumbers
-        onChange={(value) => onChange({ ...query, rawSql: value })}
-        onBlur={(value) => onChange({ ...query, rawSql: value })}
+        onChange={(value) => onChange({ ...query, rawSql: value, customRawSql: value })}
+        onBlur={(value) => onChange({ ...query, rawSql: value, customRawSql: value })}
       />
     </div>
   );

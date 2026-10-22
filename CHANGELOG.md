@@ -1,5 +1,55 @@
 # Changelog
 
+## v1.2.1 (2026-10-22)
+
+### Security
+
+- Every pooled connection now starts with `default_transaction_read_only = on`
+  and a `statement_timeout` (default 30s, configurable), so a statement that
+  slips past the lexical check still cannot write and runaway queries are
+  cancelled.
+- The read-only guard now understands `E'...'` escape strings, dollar quoting
+  and nested block comments, closing a multi-statement bypass, and rejects
+  internal management catalogs (`kwdb_internal.*`, `crdb_internal.*`) and
+  side-effecting functions (`pg_sleep`, `pg_read_file`, `nextval`,
+  `set_config`, ...).
+- `SHOW` is restricted to schema-oriented forms so cluster/session state is not
+  exposed.
+- Connection URLs in error messages are redacted; read-only and TLS guidance was
+  added to the README.
+
+### Fixed
+
+- `$__timeFilter` and `$__timeGroup` now expand through a paren-matching
+  scanner: `CAST(...)` and nested function arguments no longer produce broken
+  SQL, and every expansion is parenthesised so `NOT $__timeFilter(x)` keeps its
+  meaning.
+- Reaching the row cap now cancels the running query instead of draining the
+  whole result set.
+- Database errors raised while scanning rows are reported as downstream errors
+  instead of plugin errors.
+- Gapfill `constant` mode now emits a numeric constant; interpolation modes use
+  KWDB's accepted lower-case names (legacy `PREV`/`NEXT`/`NULL` values are
+  normalised).
+- Latest-values queries use `first()`/`last()` for the time column to match the
+  selected function, so values and timestamps no longer disagree.
+- `date` columns map to Grafana time fields, and `uuid`/`interval`/`time` values
+  render as readable strings instead of Go representations.
+- A time series query now fails with a clear message when the configured time
+  column is missing or contains `NULL` values.
+- Metadata parsing ignores table-level clauses (`INDEX`, `CONSTRAINT`,
+  `FOREIGN KEY`, ...) so the column picker no longer offers phantom columns.
+- Template-variable tag values are capped at 10,000 entries.
+- An empty query returns an explicit "query is empty" message instead of a
+  read-only rejection.
+
+### Changed
+
+- `queryTimeout` and `maxRows` can be configured per data source.
+- `plugin.json` no longer declares `queryOptions` that were never read, and the
+  minimum Grafana version is 13.1.0 (the version the plugin is built and tested
+  against).
+
 ## [v1.2.0](https://github.com/LumingSun/KWDB-Grafana-Plugin/tree/v1.2.0) (2026-08-25)
 
 [Full Changelog](https://github.com/LumingSun/KWDB-Grafana-Plugin/compare/v1.1.0...v1.2.0)

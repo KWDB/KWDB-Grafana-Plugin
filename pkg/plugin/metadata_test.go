@@ -233,7 +233,7 @@ func TestTagValuesResource(t *testing.T) {
 	if len(values) != 3 || values[0] != "CNC-001" || values[1] != "CNC-002" || values[2] != "INJ-001" {
 		t.Errorf("unexpected tag values: %#v", values)
 	}
-	wantSQL := `SELECT DISTINCT "device_id" FROM "iot_db"."sensors" ORDER BY "device_id"`
+	wantSQL := `SELECT DISTINCT "device_id" FROM "iot_db"."sensors" ORDER BY "device_id" LIMIT 10000`
 	if capturedSQL != wantSQL {
 		t.Errorf("sql = %q, want %q", capturedSQL, wantSQL)
 	}

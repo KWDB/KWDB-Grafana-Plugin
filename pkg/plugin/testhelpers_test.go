@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -54,7 +55,11 @@ func (r *mockRows) Scan(dest ...any) error {
 		case *int64:
 			*d = toInt64(values[i])
 		case *int32:
-			*d = int32(toInt64(values[i]))
+			n := toInt64(values[i])
+			if n < math.MinInt32 || n > math.MaxInt32 {
+				return fmt.Errorf("value %d overflows int32", n)
+			}
+			*d = int32(n)
 		case *float64:
 			*d = toFloat64(values[i])
 		case *bool:

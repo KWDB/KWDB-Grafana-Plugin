@@ -21,6 +21,14 @@ type DataSourceSettings struct {
 	MaxConnLifetime int `json:"maxConnLifetime"` // default 3600 (1h)
 	MaxConnIdleTime int `json:"maxConnIdleTime"` // default 900 (15min)
 	ConnectTimeout  int `json:"connectTimeout"`  // default 5
+
+	// QueryTimeout is the per-statement timeout in seconds. It is enforced both
+	// as the connection-level statement_timeout and as a query context
+	// deadline. Zero selects the default (30s); a negative value disables it.
+	QueryTimeout int `json:"queryTimeout"`
+	// MaxRows caps the number of rows buffered into a single frame. Zero
+	// selects the default (100,000); a negative value disables the cap.
+	MaxRows int `json:"maxRows"`
 }
 
 // SecretDataSourceSettings holds the password from DecryptedSecureJSONData.

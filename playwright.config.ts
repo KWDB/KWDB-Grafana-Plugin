@@ -18,6 +18,12 @@ export default defineConfig<PluginOptions>({
   testDir: './tests-e2e',
   /* Run tests in files in parallel */
   fullyParallel: false,
+  /*
+   * The suite runs against a single Grafana/KWDB instance and each test opens the panel editor.
+   * Running spec files in parallel against that one instance made browser/context teardown hang
+   * ("worker process did not exit") and produced flaky query responses, so run serially.
+   */
+  workers: 1,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */

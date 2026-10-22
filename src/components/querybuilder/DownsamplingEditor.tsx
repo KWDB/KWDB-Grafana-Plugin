@@ -8,6 +8,7 @@ import { SqlPreview } from './SqlPreview';
 import { ColumnPicker } from './shared/ColumnPicker';
 import { IntervalPicker } from './shared/IntervalPicker';
 import { MetricRow } from './shared/MetricRow';
+import { tableChangePatch } from './shared/queryChanges';
 import { TableSelector } from './shared/TableSelector';
 import { TimeColumnPicker } from './shared/TimeColumnPicker';
 import { useTableColumns } from './shared/useTableColumns';
@@ -43,7 +44,16 @@ export function DownsamplingEditor({ datasource, query, onChange }: Props) {
   return (
     <VerticalGroup spacing="md">
       <InlineField label="Table" labelWidth={12}>
-        <TableSelector datasource={datasource} value={query.table} onChange={(table) => updateQuery({ table })} />
+        <TableSelector
+          datasource={datasource}
+          value={query.table}
+          onChange={(table) => {
+            const patch = tableChangePatch(table, query.table);
+            if (patch) {
+              updateQuery(patch);
+            }
+          }}
+        />
       </InlineField>
       <InlineField label="Time column" labelWidth={12}>
         <TimeColumnPicker

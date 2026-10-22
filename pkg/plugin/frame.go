@@ -51,6 +51,10 @@ type FrameOptions struct {
 	SplitByTag *bool
 	// MaxRows caps the number of buffered rows; zero or negative disables the cap.
 	MaxRows int
+	// OnTruncate is called once when the row cap is reached, before the result
+	// set is drained. It lets the caller cancel the query so the database stops
+	// computing rows that will never be returned.
+	OnTruncate func()
 }
 
 // RowsToFrame converts pgx result rows into a single Grafana Data Frame.
@@ -72,6 +76,9 @@ func RowsToFrames(rows pgx.Rows, opts FrameOptions) ([]*data.Frame, error) {
 	plans, truncated, err := scanPlans(rows, maxRows)
 	if err != nil {
 		return nil, err
+	}
+	if truncated && opts.OnTruncate != nil {
+		opts.OnTruncate()
 	}
 
 	if opts.Format == "time_series" {
@@ -179,7 +186,7 @@ func applyMaxRowsNotice(frame *data.Frame, maxRows int) {
 	}
 	frame.Meta.Notices = append(frame.Meta.Notices, data.Notice{
 		Severity: data.NoticeSeverityWarning,
-		Text:     fmt.Sprintf("Query result was truncated at %d rows; add LIMIT or narrow the time range", maxRows),
+		Text:     fmt.Sprintf("Query result was truncated at %d rows read (before pivoting into series); add LIMIT or narrow the time range", maxRows),
 	})
 }
 
@@ -300,13 +307,80 @@ func kindForOID(oid uint32) columnKind {
 		return kindFloat64
 	case 16:
 		return kindBool
-	case 1083, 1114, 1184:
+	// timestamp, timestamptz, date and time are all plotted on the time axis.
+	case 1082, 1083, 1114, 1184:
 		return kindTime
 	case 25, 1043:
 		return kindString
 	default:
+		// uuid, interval, json, jsonb, bytea, arrays and other exotic types are
+		// rendered through convertValue's readable string form so a table never
+		// shows raw Go values such as [26 34 100 ...].
 		return kindString
 	}
+}
+
+// stringifyValue renders non-string database values in a readable form for
+// table output.
+func stringifyValue(v any) string {
+	switch value := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return value
+	case []byte:
+		return string(value)
+	case time.Time:
+		return value.UTC().Format(time.RFC3339Nano)
+	case [16]byte:
+		return formatUUID(value)
+	case pgtype.Interval:
+		return formatInterval(value)
+	case pgtype.Time:
+		if !value.Valid {
+			return ""
+		}
+		return time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC).
+			Add(time.Duration(value.Microseconds) * time.Microsecond).Format("15:04:05.999999")
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+func formatUUID(b [16]byte) string {
+	const hex = "0123456789abcdef"
+	var out [36]byte
+	pos := 0
+	for i, by := range b {
+		if i == 4 || i == 6 || i == 8 || i == 10 {
+			out[pos] = '-'
+			pos++
+		}
+		out[pos] = hex[by>>4]
+		out[pos+1] = hex[by&0x0f]
+		pos += 2
+	}
+	return string(out[:])
+}
+
+func formatInterval(v pgtype.Interval) string {
+	if !v.Valid {
+		return ""
+	}
+	parts := make([]string, 0, 3)
+	if v.Months != 0 {
+		parts = append(parts, fmt.Sprintf("%d mons", v.Months))
+	}
+	if v.Days != 0 {
+		parts = append(parts, fmt.Sprintf("%d days", v.Days))
+	}
+	if v.Microseconds != 0 {
+		parts = append(parts, (time.Duration(v.Microseconds) * time.Microsecond).String())
+	}
+	if len(parts) == 0 {
+		return "00:00:00"
+	}
+	return strings.Join(parts, " ")
 }
 
 func convertValue(kind columnKind, v any) (any, error) {
@@ -380,14 +454,7 @@ func convertValue(kind columnKind, v any) (any, error) {
 		}
 		return nil, fmt.Errorf("cannot convert %T to bool", v)
 	case kindString:
-		switch s := v.(type) {
-		case string:
-			return s, nil
-		case []byte:
-			return string(s), nil
-		default:
-			return fmt.Sprint(v), nil
-		}
+		return stringifyValue(v), nil
 	case kindTime:
 		if t, ok := v.(time.Time); ok {
 			return t, nil
@@ -401,9 +468,12 @@ func convertValue(kind columnKind, v any) (any, error) {
 }
 
 func prepareTimeSeries(plans []columnPlan, timeColumn string, tags []string) error {
-	timeIdx := findTimeColumn(plans, timeColumn)
-	if timeIdx < 0 {
-		return fmt.Errorf("time_series format requires a time column")
+	timeIdx, err := findTimeColumn(plans, timeColumn)
+	if err != nil {
+		return err
+	}
+	if err := ensureNoNullTimes(plans[timeIdx]); err != nil {
+		return err
 	}
 	sortPlansByTime(plans, timeIdx)
 	plans[timeIdx].name = "time"
@@ -418,27 +488,49 @@ func prepareTimeSeries(plans []columnPlan, timeColumn string, tags []string) err
 	return nil
 }
 
-func findTimeColumn(plans []columnPlan, timeColumn string) int {
+func findTimeColumn(plans []columnPlan, timeColumn string) (int, error) {
 	if timeColumn != "" {
 		for i := range plans {
-			if plans[i].name == timeColumn {
-				return i
+			if strings.EqualFold(plans[i].name, timeColumn) {
+				return i, nil
 			}
 		}
+		// Builder modes bucket the time column and alias it to "time", so the
+		// configured source column legitimately does not appear in the result.
+		for i := range plans {
+			if plans[i].kind == kindTime && strings.EqualFold(plans[i].name, "time") {
+				return i, nil
+			}
+		}
+		return -1, fmt.Errorf("configured time column %q was not returned by the query and no \"time\" column was found; available columns: %s",
+			timeColumn, strings.Join(columnNames(plans), ", "))
 	}
 	for i := range plans {
 		if plans[i].kind == kindTime {
-			return i
+			return i, nil
 		}
 	}
-	for _, name := range []string{"time", "ts", "k_timestamp", "timestamp"} {
-		for i := range plans {
-			if plans[i].kind == kindTime && strings.EqualFold(plans[i].name, name) {
-				return i
-			}
+	return -1, fmt.Errorf("time_series format requires a time column; available columns: %s (select Table format for non-time results)",
+		strings.Join(columnNames(plans), ", "))
+}
+
+// ensureNoNullTimes fails with a readable error when the time column contains
+// NULL values, which the Grafana time series conversion cannot represent.
+func ensureNoNullTimes(plan columnPlan) error {
+	for row, value := range plan.values {
+		if value == nil {
+			return fmt.Errorf("time column %q contains NULL values (row %d); filter them out with a WHERE clause or use Table format", plan.name, row+1)
 		}
 	}
-	return -1
+	return nil
+}
+
+func columnNames(plans []columnPlan) []string {
+	names := make([]string, len(plans))
+	for i := range plans {
+		names[i] = plans[i].name
+	}
+	return names
 }
 
 func sortPlansByTime(plans []columnPlan, timeIdx int) {
