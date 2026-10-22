@@ -98,7 +98,11 @@ describe('sqlBuilder', () => {
     );
   });
 
-  it.each(['PREV', 'NEXT', 'NULL'] as const)('builds gapfill SQL with %s interpolation', (mode) => {
+  it.each([
+    ['prev', "'prev'"],
+    ['next', "'next'"],
+    ['null', "'null'"],
+  ] as const)('builds gapfill SQL with %s interpolation as a quoted lowercase literal', (mode, literal) => {
     const query: KwdbQuery = {
       ...base,
       mode: 'gapfill',
@@ -109,7 +113,56 @@ describe('sqlBuilder', () => {
       metrics: [{ column: 'pressure', aggregation: 'avg' }],
     };
 
-    expect(buildGapfillSql(query)).toContain(`interpolate(avg("pressure"), ${mode}) AS "avg_pressure"`);
+    expect(buildGapfillSql(query)).toContain(`interpolate(avg("pressure"), ${literal}) AS "avg_pressure"`);
+  });
+
+  it.each([
+    ['PREV', "'prev'"],
+    ['NEXT', "'next'"],
+    ['NULL', "'null'"],
+  ] as const)('normalizes legacy %s interpolation saved by older dashboards', (legacyMode, literal) => {
+    const query = {
+      ...base,
+      mode: 'gapfill',
+      table: 'sensors',
+      timeColumn: 'ts',
+      interval: '15m',
+      interpolateMode: legacyMode,
+      metrics: [{ column: 'pressure', aggregation: 'avg' }],
+    } as unknown as KwdbQuery;
+
+    expect(buildGapfillSql(query)).toContain(`interpolate(avg("pressure"), ${literal}) AS "avg_pressure"`);
+  });
+
+  it('builds gapfill SQL with constant interpolation and the configured numeric value', () => {
+    const query: KwdbQuery = {
+      ...base,
+      mode: 'gapfill',
+      table: 'sensors',
+      timeColumn: 'ts',
+      interval: '15m',
+      interpolateMode: 'constant',
+      interpolateConstant: 42,
+      metrics: [{ column: 'pressure', aggregation: 'avg' }],
+    };
+
+    expect(buildGapfillSql(query)).toContain('interpolate(avg("pressure"), 42) AS "avg_pressure"');
+  });
+
+  it('falls back to 0 for constant interpolation without a finite value', () => {
+    const query: KwdbQuery = {
+      ...base,
+      mode: 'gapfill',
+      table: 'sensors',
+      timeColumn: 'ts',
+      metrics: [{ column: 'pressure', aggregation: 'avg' }],
+      interpolateMode: 'constant',
+    };
+
+    expect(buildGapfillSql(query)).toContain('interpolate(avg("pressure"), 0) AS "avg_pressure"');
+    expect(buildGapfillSql({ ...query, interpolateConstant: Number.NaN })).toContain(
+      'interpolate(avg("pressure"), 0) AS "avg_pressure"'
+    );
   });
 
   it('builds latest values SQL with last() and groups by tags', () => {
@@ -135,6 +188,24 @@ describe('sqlBuilder', () => {
     );
   });
 
+  it.each([
+    ['last', 'last("ts")'],
+    ['last_row', 'last("ts")'],
+    ['first', 'first("ts")'],
+    ['first_row', 'first("ts")'],
+  ] as const)('uses a time expression matching %s() in latest values SQL', (latestFunc, timeExpr) => {
+    const query: KwdbQuery = {
+      ...base,
+      mode: 'latest',
+      table: 'sensors',
+      timeColumn: 'ts',
+      latestFunc,
+      metrics: [{ column: 'temperature', aggregation: 'none' }],
+    };
+
+    expect(buildLatestSql(query)).toContain(`       ${timeExpr} AS "time"`);
+  });
+
   it('builds latest values SQL with first_row() and no GROUP BY when tags are empty', () => {
     const query: KwdbQuery = {
       ...base,
@@ -148,7 +219,7 @@ describe('sqlBuilder', () => {
     expect(buildLatestSql(query)).toBe(
       [
         'SELECT first_row("temperature") AS "oldest_temp",',
-        '       last("ts") AS "time"',
+        '       first("ts") AS "time"',
         'FROM "sensors"',
         'WHERE "ts" >= $__timeFrom AND "ts" <= $__timeTo',
       ].join('\n')

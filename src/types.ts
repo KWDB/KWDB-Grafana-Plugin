@@ -5,6 +5,9 @@ export type KwdbQueryMode = 'downsampling' | 'gapfill' | 'latest' | 'window' | '
 
 export type KwdbQueryFormat = 'time_series' | 'table';
 
+// KWDB's interpolate() accepts lowercase quoted strings or a numeric constant.
+export type KwdbInterpolateMode = 'linear' | 'prev' | 'next' | 'null' | 'constant';
+
 export interface MetricSpec {
   column: string;
   aggregation: 'avg' | 'sum' | 'count' | 'min' | 'max' | 'stddev' | 'none';
@@ -22,7 +25,9 @@ export interface KwdbQuery extends DataQuery {
   // Downsampling / gapfill
   interval?: string;
   // Gapfill
-  interpolateMode?: 'linear' | 'PREV' | 'NEXT' | 'constant' | 'NULL';
+  interpolateMode?: KwdbInterpolateMode;
+  // Gapfill: value used when interpolateMode is 'constant' (defaults to 0).
+  interpolateConstant?: number;
   // Latest values
   latestFunc?: 'last' | 'last_row' | 'first' | 'first_row';
   // Latest values: split results into one frame per tag combination (default true)
@@ -35,6 +40,8 @@ export interface KwdbQuery extends DataQuery {
   eventEndCond?: string;
   // Raw SQL
   rawSql?: string;
+  // Raw SQL last written by the user, kept so switching modes does not lose it.
+  customRawSql?: string;
 }
 
 export const DEFAULT_QUERY: Partial<KwdbQuery> = {
@@ -56,6 +63,10 @@ export interface KwdbDataSourceOptions extends DataSourceJsonData {
   maxConnLifetime?: number;
   maxConnIdleTime?: number;
   connectTimeout?: number;
+  // Per-statement timeout in seconds (0 = default 30, negative disables) and
+  // the per-frame row cap (0 = default 100000, negative disables).
+  queryTimeout?: number;
+  maxRows?: number;
 }
 
 export interface KwdbSecureJsonData {
