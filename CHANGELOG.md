@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.2.2 (2026-10-27)
+
+### Changed
+
+- The packaged plugin README now ships the full user documentation (query editor
+  modes, time macros, output formats, read-only safety, troubleshooting) instead
+  of the short summary, so the Grafana plugin catalog page shows the complete
+  guide.
+- `plugin.json` adds four screenshots (dashboard example, data source
+  configuration, downsampling query, save & test) and `License` / `Support`
+  links for the catalog detail page.
+
 ## v1.2.1 (2026-10-22)
 
 ### Security

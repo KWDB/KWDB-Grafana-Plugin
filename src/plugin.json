@@ -36,14 +36,34 @@
         "url": "https://www.kaiwudb.com"
       },
       {
-        "name": "Raise issue",
+        "name": "Support",
         "url": "https://github.com/LumingSun/kwdb-tsdb-datasource/issues"
+      },
+      {
+        "name": "License",
+        "url": "https://github.com/LumingSun/kwdb-tsdb-datasource/blob/master/LICENSE"
       }
     ],
     "screenshots": [
       {
         "name": "KWDB TSDB query editor",
         "path": "img/screenshot-query-editor.png"
+      },
+      {
+        "name": "Dashboard built on the KWDB TSDB data source",
+        "path": "img/example.png"
+      },
+      {
+        "name": "Data source configuration",
+        "path": "img/kwdb-datasource.png"
+      },
+      {
+        "name": "Downsampling query with the SQL builder",
+        "path": "img/downsampling-example.png"
+      },
+      {
+        "name": "Save and test health check",
+        "path": "img/save-test.png"
       }
     ],
     "version": "%VERSION%",

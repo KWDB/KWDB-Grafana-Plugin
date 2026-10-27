@@ -45,4 +45,7 @@ ci/
 # Editor
 .idea
 
+# macOS
+.DS_Store
+
 .eslintcache
