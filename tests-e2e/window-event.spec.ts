@@ -17,11 +17,21 @@ import {
   skipIfTableUnavailable,
 } from './helpers';
 
-/** Fills one of the free text window fields (interval, slide, conditions, ...). */
+/**
+ * Fills one of the free text window fields (interval, slide, conditions, ...).
+ *
+ * `fill()` replaces the whole value in one input event. The COUNT_WINDOW row limit uses that
+ * value verbatim in the SQL, and the resulting re-render races with monaco's asynchronous
+ * model update, so the preview keeps the previous (empty) statement. Typing the value with the
+ * field cleared first produces the same final state through several smaller updates, which the
+ * preview does pick up.
+ */
 async function fillWindowField(page: Page, label: string, value: string): Promise<void> {
   const input = page.getByRole('textbox', { name: label });
   await expect(input, `the "${label}" input must be rendered for the selected window type`).toBeVisible();
-  await input.fill(value);
+  await input.click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type(value, { delay: 60 });
 }
 
 /**
@@ -140,11 +150,13 @@ test.describe('window/event query builder', () => {
     // be entered after the change.
     await pickOption(page, 'Window type', 'COUNT_WINDOW');
     await fillWindowField(page, 'Row limit', '100');
+    await fillWindowField(page, 'Slide rows', '10');
 
-    // Only the mandatory row limit is filled here. Filling the optional "Slide rows" input as
-    // well leaves it focused, and the monaco SQL preview then stops re-rendering the
-    // regenerated statement, so the slide variant of COUNT_WINDOW is not asserted from the UI.
-    await expectSqlPreviewContains(page, 'COUNT_WINDOW(100)', 'count window mode must aggregate with COUNT_WINDOW()');
+    await expectSqlPreviewContains(
+      page,
+      'COUNT_WINDOW(100, 10)',
+      'count window mode must aggregate with COUNT_WINDOW()'
+    );
 
     const response = await panelEditPage.refreshPanel();
     const frames = await expectQuerySucceeded(response);
