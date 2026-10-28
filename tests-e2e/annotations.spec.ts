@@ -53,25 +53,21 @@ test.describe('annotations', () => {
     const ds = await readProvisionedDataSource({ fileName: 'datasources.yml' });
     await skipIfTableUnavailable(page, ds.uid);
 
-    // A new annotation query is bound to the default data source, and the provisioned KWDB data
-    // source is the default one. Grafana only binds the default data source when the plugin
-    // declares annotation support, so this asserts `annotations: true` is honoured.
-    const dataSourceInput = page.getByRole('textbox', { name: 'Select a data source' });
-    await expect(dataSourceInput, 'the annotation query must be bound to the KWDB data source').toHaveAttribute(
-      'placeholder',
-      ds.name
-    );
-
     // Grafana renders this alert when the selected data source does not support annotations.
+    // Its absence is the direct evidence that `annotations: true` in plugin.json is honoured.
     await expect(
       page.getByText('No annotation support for this data source'),
       'Grafana reported that the KWDB data source does not support annotations'
     ).toHaveCount(0);
 
-    // Grafana renders the data source logo next to the picker only for a resolved data source.
-    await expect(page.getByAltText(`${ds.name} logo`), 'the KWDB data source logo must be shown').toBeVisible();
-
-    // The standard annotation editor renders the data source's own query editor.
+    // The standard annotation editor renders the data source's own query editor. The Mode
+    // combobox belongs to this plugin, so it is the version-stable half of the check: it
+    // proves Grafana resolved the KWDB data source and handed the query to it.
+    //
+    // The binding itself is deliberately not asserted through the data source picker. Grafana
+    // 13.1 renders it as a text input carrying the bound name as a placeholder, while 13.2
+    // replaced it with a combobox, so any locator for that control only works on part of the
+    // supported range - it failed on 13.2/13.3/nightly while passing on 13.1.
     await expect(
       page.getByRole('combobox', { name: 'Mode' }),
       'the annotation editor must render the KWDB query editor'
