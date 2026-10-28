@@ -163,6 +163,15 @@ jobs:
           path: dist
           name: ${{ needs.build.outputs.plugin-id }}-${{ needs.build.outputs.plugin-version }}
 
+      # upload-artifact does not preserve file permissions, so the backend
+      # binaries arrive without their executable bit. The validator's
+      # binarypermissions analyzer requires exactly 0755 and fails otherwise.
+      # The playwright job does the same for the same reason.
+      - name: Execute permissions on binary
+        if: needs.build.outputs.has-backend == 'true'
+        run: |
+          chmod +x ./dist/gpx_*
+
       - name: Package plugin
         id: package
         run: |
