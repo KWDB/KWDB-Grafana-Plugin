@@ -138,7 +138,12 @@ test.describe('annotations', () => {
     const testButton = annotationEditPage.getByGrafanaSelector(selectors.components.Annotations.editor.testButton);
     await expect(testButton, 'the annotation editor must expose a test button').toBeVisible();
 
-    const result = await runAnnotationQuery(page, testButton, e2eConfig.table);
+    // Two reasons the obvious fragments do not work here. The builder quotes every identifier,
+    // so the table reaches the backend as "demo_ts"."sensors" rather than demo_ts.sensors; and
+    // the request body is JSON, where those double quotes are escaped, so a quoted fragment is
+    // not a literal substring either. The generated alias `latest_<metric>` is unquoted inside
+    // the statement, survives JSON encoding, and identifies this query.
+    const result = await runAnnotationQuery(page, testButton, `latest_${e2eConfig.metric}`);
     expect(result.error, `annotation query returned an error: ${result.error ?? ''}`).toBeUndefined();
     expect([200, 'finished'], `unexpected annotation query status ${String(result.status)}`).toContain(result.status);
 
