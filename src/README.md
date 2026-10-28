@@ -38,19 +38,19 @@ This plugin connects [Grafana](https://grafana.com) to KaiwuDB and its open-sour
 
 ## Configuration
 
-| Field | Description |
-| --- | --- |
-| Host | KWDB host, for example `10.0.0.10`. |
-| Port | PostgreSQL-compatible port, default `26257`. |
-| Database | Database to query, default `defaultdb`. |
-| User | Database user, default `root`. Prefer a read-only account. |
-| SSL Mode | `disable`, `require`, `verify-ca`, or `verify-full`. |
-| SSL Root Cert | Path to the CA certificate for `verify-ca` / `verify-full`. |
-| Password | Database password, stored in Grafana secure JSON data. |
-| Query timeout | Per-statement timeout in seconds (default `30`, `-1` disables). Applied as both `statement_timeout` and a query deadline. |
-| Max rows | Rows buffered per frame (default `100000`, `-1` disables). The query is cancelled once the cap is reached. |
-| Max connections | Connection pool size (default `8`). |
-| Connect timeout | Connection timeout in seconds (default `5`). |
+| Field           | Description                                                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Host            | KWDB host, for example `10.0.0.10`.                                                                                       |
+| Port            | PostgreSQL-compatible port, default `26257`.                                                                              |
+| Database        | Database to query, default `defaultdb`.                                                                                   |
+| User            | Database user, default `root`. Prefer a read-only account.                                                                |
+| SSL Mode        | `disable`, `require`, `verify-ca`, or `verify-full`.                                                                      |
+| SSL Root Cert   | Path to the CA certificate for `verify-ca` / `verify-full`.                                                               |
+| Password        | Database password, stored in Grafana secure JSON data.                                                                    |
+| Query timeout   | Per-statement timeout in seconds (default `30`, `-1` disables). Applied as both `statement_timeout` and a query deadline. |
+| Max rows        | Rows buffered per frame (default `100000`, `-1` disables). The query is cancelled once the cap is reached.                |
+| Max connections | Connection pool size (default `8`).                                                                                       |
+| Connect timeout | Connection timeout in seconds (default `5`).                                                                              |
 
 ![Data source settings](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/kwdb-datasource.png)
 
@@ -96,12 +96,12 @@ LIMIT 100
 
 Available macros:
 
-| Macro | Expansion |
-| --- | --- |
-| `$__timeFilter(column)` | `column >= '...'::TIMESTAMP AND column <= '...'::TIMESTAMP` |
-| `$__timeFrom` | Dashboard time range start as a timestamp literal |
-| `$__timeTo` | Dashboard time range end as a timestamp literal |
-| `$__timeGroup(column, 'interval')` | `time_bucket(column, 'interval')` |
+| Macro                              | Expansion                                                   |
+| ---------------------------------- | ----------------------------------------------------------- |
+| `$__timeFilter(column)`            | `column >= '...'::TIMESTAMP AND column <= '...'::TIMESTAMP` |
+| `$__timeFrom`                      | Dashboard time range start as a timestamp literal           |
+| `$__timeTo`                        | Dashboard time range end as a timestamp literal             |
+| `$__timeGroup(column, 'interval')` | `time_bucket(column, 'interval')`                           |
 
 ## Output formats
 
@@ -132,6 +132,8 @@ Read-only access is enforced in three layers:
 - **Results are truncated:** the backend caps results at 100,000 rows per frame (configurable). Add `LIMIT` or narrow the time range.
 - **Queries time out:** the default statement timeout is 30 seconds. Note that `time_bucket_gapfill` + `interpolate` is much slower than plain downsampling: on a multi-million-row table a 30 day gapfill can exceed 30 seconds while the same range downsamples in well under a second.
 - **`SHOW` statement is rejected:** `SHOW` is allowed for schema and session variables, but forms that expose cluster or session state are blocked (`SHOW SESSIONS`, `SHOW QUERIES`, `SHOW JOBS`, `SHOW TRACE`, `SHOW STATISTICS`, `SHOW BACKUP`, `SHOW ALL`, `SHOW SCHEDULES`, `SHOW CHANGEFEEDS`).
+- **Window queries fail with `group-window-func: memory budget exceeded`:** sliding windows (`TIME_WINDOW` with a slide interval) and `COUNT_WINDOW` buffer every row of the range in memory, so a long dashboard time range exhausts KWDB's window memory budget. This is a database-side limit, not a plugin one. Narrow the panel time range, or drop the slide interval so the window boundaries line up with the range instead of overlapping.
+- **Annotation queries return nothing:** Grafana derives annotation events from a `time` column plus a text column, so an annotation query has to use **Table** format. A builder query in Time series format fails with `could not convert frame to time series` because its result has no text column.
 
 ## Development and publishing
 
