@@ -133,17 +133,17 @@ func (d *Datasource) CheckHealth(ctx context.Context, _ *backend.CheckHealthRequ
 	}
 	rows, err := d.pool.Query(ctx, "SELECT 1")
 	if err != nil {
-		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: sanitizeError(err)}, nil
+		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: healthCheckMessage(err)}, nil
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var one int32
 		if err := rows.Scan(&one); err != nil {
-			return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: sanitizeError(err)}, nil
+			return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: healthCheckMessage(err)}, nil
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: sanitizeError(err)}, nil
+		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: healthCheckMessage(err)}, nil
 	}
 	return &backend.CheckHealthResult{
 		Status:  backend.HealthStatusOk,

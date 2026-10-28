@@ -42,6 +42,9 @@ func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSetti
 		return nil, err
 	}
 	applyDefaults(cfg)
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
 	poolCfg, err := pgxpool.ParseConfig(buildConnString(*cfg, secrets.Password))
 	if err != nil {
