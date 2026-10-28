@@ -7,7 +7,7 @@ Grafana time series or table data.
 
 > 本插件适用于 KaiwuDB 及其开源版本 KWDB，可以在 Grafana 中查询、展示和分析
 > KWDB 时序数据。
-![example](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/example.png)
+![example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/example.png)
 ## Features
 
 - Visual SQL builder for downsampling, gapfill, latest values, and window/event
@@ -98,7 +98,7 @@ KWDB_HOST=10.110.105.80 KWDB_PORT=26258 KWDB_DATABASE=ts_db \
 4. Fill in the connection settings.
 5. Click **Save & test**.
 
-![KWDB Datasource](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/kwdb-datasource.png)
+![KWDB Datasource](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/kwdb-datasource.png)
 
 | Field | Description |
 | --- | --- |
@@ -125,7 +125,7 @@ as `sslrootcert`.
 Click **Save & test** to verify connectivity. The backend executes `SELECT 1`
 and reports whether the data source is working.
 
-![test-datasource](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/save-test.png)
+![test-datasource](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/save-test.png)
 
 ## Build a dashboard
 
@@ -157,7 +157,7 @@ more metrics.
 
 Aggregations: `avg`, `sum`, `count`, `min`, `max`, `stddev`, `none`.
 
-![downsampling example](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/downsampling-example.png)
+![downsampling example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/downsampling-example.png)
 
 ### Gapfill
 
@@ -260,7 +260,7 @@ Each query returns one of two formats, selectable in the query editor toolbar
   tag columns into labels, and produces a wide time-series frame with one
   series per tag combination. Choose this for chart panels such as **Time
   series**, **Stat**, and **Gauge** so every device is drawn separately.
-- **Table**: the result is returned as raw rows (long format). Choose this for
+- **Table**: the result is returned as raw rows. Choose this for
   the **Table** panel. Latest-values queries with tag columns additionally
   return one frame per tag combination by default, so Gauge/Stat panels still
   show one value per device; disable the **Split per tag** toggle to return a

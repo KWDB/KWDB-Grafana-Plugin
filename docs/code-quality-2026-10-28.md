@@ -1,0 +1,175 @@
+# KWDB TSDB 数据源插件 — 代码侧待优化项梳理
+
+**日期**：2026-10-28
+**范围**：`kwdb-tsdb-datasource` 仓库，分支 `fix/code-quality-hardening`（自 `master` 切出）
+**基线**：v1.2.2，插件 ID `lumingsun-kwdbtsdb-datasource`
+**说明**：本文档把对比评估和静态检查中发现的问题重新归类，区分"已在本次改动中修掉"和"还需要人工决策或真实环境验证的"。每条都给了出处，方便逐条核对。
+
+---
+
+## 一、本次已修掉的问题
+
+### 1. 前端核心逻辑没有单测（已修）
+
+`src/sqlBuilder.ts`（276 行，5 种模式的 SQL 生成）和 `src/variableQuery.ts`（模板变量查询解析）是全仓库最核心的两段纯逻辑，此前**零单元测试**——原有的 58 个 jest 用例集中在 `aggregations.test.ts` 一个文件里。
+
+补了两份测试，合并进仓库原有的 `tests/` 目录（该目录本来就有这两个模块的旧测试文件，新文件是旧文件的超集，直接替换、避免同一模块两份测试）：
+
+| 文件                          | 用例数 | 覆盖率                              |
+| ----------------------------- | ------ | ----------------------------------- |
+| `tests/sqlBuilder.test.ts`    | 69     | 语句 98.5% / 分支 97.2% / 函数 100% |
+| `tests/variableQuery.test.ts` | 37     | 语句 100% / 行 100%                 |
+| `src/variableSupport.test.ts` | 6      | 新增的变量支持类                    |
+
+### 2. 测试过程中暴露出的真实代码缺陷（已修）
+
+写测试时发现了 15 处问题，其中**会直接产生错误 SQL 或破坏往返一致性**的已经修掉：
+
+| #   | 位置                                              | 问题                                                                                                                                                                                                                                              | 修法                                                                                                                                                        |
+| --- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `src/sqlBuilder.ts` `timeExpr`                    | `timeColumn` 未 trim 就进了 `time_bucket(...)`，而 WHERE 子句用的是 trim 后的值。列名带首尾空格时 SELECT 与 WHERE 引用的列名不一致，SQL 直接报错                                                                                                  | `timeExpr` 改为接收已 trim 的 timeColumn                                                                                                                    |
+| 2   | `src/sqlBuilder.ts` `aggregationExpr`             | 指标列名同样从不 trim（`table` 和 `tags` 都 trim 了，只有指标列漏了），会静默生成 `avg(" temperature ")`                                                                                                                                          | 统一 trim                                                                                                                                                   |
+| 3   | `src/sqlBuilder.ts` `timeExpr` / `windowTimeExpr` | `interval \|\| '5m'` 只对 `undefined`/`''` 兜底，纯空白字符串会原样进 SQL，`time_bucket(ts, '   ')` 是硬错误                                                                                                                                      | 空白一律视为未设置                                                                                                                                          |
+| 4   | `src/sqlBuilder.ts` `windowTimeExpr`              | `EVENT_WINDOW`/`STATE_WINDOW` 的条件表达式和 `COUNT_WINDOW` 的行数**原样拼接、零校验零转义**。`COUNT_WINDOW(10; DROP TABLE sensors)` 这类输入会被完整拼进语句                                                                                     | 条件片段拒绝 `;`、`--`、`/*`、`*/`；COUNT_WINDOW 参数限制为数字。后端只读校验是最后一道防线，编辑器这一层负责在用户写错时给出可预期的行为而不是让数据库报错 |
+| 5   | `src/sqlBuilder.ts` `metricAlias`                 | L55/L58 是**不可达死代码**（两个调用点都已提前判断 alias 并用短路求值），也正是覆盖率里唯一没覆盖到的两行                                                                                                                                         | 删掉不可达分支，函数收敛为单一职责                                                                                                                          |
+| 6   | `src/sqlBuilder.ts` `quoteQualified`              | 按 `.` 无条件切分，合法引号标识符 `"my.table"` 被改写成 `"my"."table"`                                                                                                                                                                            | 只在引号外的点才算分隔符                                                                                                                                    |
+| 7   | `src/variableQuery.ts`                            | `split(',')` 不识别引号，`tag_values("my,sensors", device_id)` 被误判成参数个数错误                                                                                                                                                               | 改成引号感知的切分                                                                                                                                          |
+| 8   | `src/variableQuery.ts`                            | `buildVariableQueryString` 的 switch 没有 default，运行时可能返回 `undefined`（声明类型是 `string`）；缺 table/column 时会生成 `columns()`、`tag_values(sensors, )` 这类**自己 parse 不回去**的字符串，Grafana 变量列表里显示的查询插件自己会拒绝 | 补齐 default 分支抛错；缺字段时抛错；含逗号的参数加引号保证往返                                                                                             |
+| 9   | `src/variableQuery.ts`                            | 分号剥离发生在 trim 之后且不再 trim，`tables() ;`（分号前有空格）会报"不支持的变量查询"，错误信息有误导性                                                                                                                                         | 空白和分号一起从尾部剥离                                                                                                                                    |
+| 10  | `src/variableQuery.ts`                            | 结构化输入只校验 `columns`/`tagValues`，其他 queryType 原样放行；且返回的是**入参对象引用**，调用方改动会污染解析结果                                                                                                                             | 穷举校验 + 返回拷贝                                                                                                                                         |
+| 11  | `src/variableQuery.ts`                            | 正则过松，`columns(a)(b)` 会被当成表名 `a)(b` 接受                                                                                                                                                                                                | 参数中拒绝括号                                                                                                                                              |
+| 12  | `src/README.md` / `README.md`                     | 文档写"Table: long format"，但 `KwdbQueryFormat` 只有 `time_series \| table`，没有 `long`                                                                                                                                                         | 改掉表述                                                                                                                                                    |
+
+### 3. 变量支持 API 已废弃（已修）
+
+`src/module.ts` 用了 `setVariableQueryEditor`，Grafana 已标记为 deprecated，建议改用数据源实例上的 `variables` 属性。这是全仓库最后一个 deprecation 警告（eslint 从 26 条降到 25 条，剩下 25 条是 UI 组件 deprecation，见第三节）。
+
+迁移方式：新建 `src/variableSupport.ts`，继承 `CustomVariableSupport`，在 `KwdbDataSource` 构造函数里赋给 `this.variables`。变量查询的执行路径从 Grafana 的 legacy `metricFindQuery` 分支切到 `variables.query()`，所以补了 `src/variableSupport.test.ts`（6 个用例）覆盖：target 透传、scopedVars/range 转发、空 target、错误传播、text/value 映射。
+
+> `KwdbVariableQuery` 故意不继承 `DataQuery`（变量查询没有 refId，Grafana 也只读 `queryType`/`table`/`column`），所以泛型参数用 `any` 并在 request target 上重新断言具体类型，这一点在文件注释里写明了。
+
+### 4. 健康检查的错误提示对普通用户不友好（已修）
+
+原来 `CheckHealth` 直接返回脱敏后的原始数据库错误（带 SQLSTATE）。对 DBA 有用，但配错密码/端口/库名的用户看到的是 `ERROR: password authentication failed for user "root" (SQLSTATE 28P01)` 这种。
+
+新增 `pkg/plugin/health.go`：按 SQLSTATE 和错误类型分类，在原始错误**前面**加一句人话判断，原始错误保留（DBA 仍然看得到 SQLSTATE）。覆盖：认证失败、库不存在、权限不足、连接异常类（08）、超时、连接被拒、TLS 握手/证书失败。
+
+配套新增 `pkg/plugin/health_test.go`（19 个用例）和 `pkg/models/settings_test.go`。
+
+### 5. 连接参数没有前置校验（已修）
+
+`port` 是自由整数，用户填 99999 时 `pgxpool.ParseConfig` 才报错，错误信息难懂；`sslmode` 如果被手工改成 pgx 的 `allow`/`prefer`，会**静默降级成明文连接**——正是这个插件刻意避免的行为。
+
+在 `models.DataSourceSettings` 上新增 `Validate()`，`NewDatasource` 在应用默认值之后调用：端口限制 1–65535，sslmode 只接受 UI 提供的四种（`disable`/`require`/`verify-ca`/`verify-full`），池参数不允许负值。查询超时和行数上限的 0/负数是有意义的取值（"用默认值"/"不限制"），不拦截。
+
+### 6. CI 只跑元数据校验（已修）
+
+`.github/workflows/ci.yml` 里插件校验只有 `-analyzer=metadatavalid` 一项，全量校验只在 `release.yml`，而发版流程**从未实跑过**。
+
+新增独立的 `plugin-validator` job：复用 build 产物打包，跑 `@grafana/plugin-validator@0.50.0` 全量 analyzer，和 release.yml 用同一条命令。产物是未签名的，所以 `unsigned plugin` analyzer 会报一条 warning——这是每个 PR 都会出现的预期结果，不会让 job 失败。
+
+顺带修了 `docker logs kaiwudb-kwdbtsdb-datasource` 这个硬编码容器名（名字由 create-plugin 生成进 `.config`，不该在这里重复），改成 `docker compose logs`。
+
+### 7. 插件元数据（已修）
+
+- `src/plugin.json` 的四个链接还指向改名前的 `LumingSun/kwdb-tsdb-datasource`，已更新为 `LumingSun/KWDB-Grafana-Plugin`；`README.md` 和 `src/README.md` 里的绝对图片/文档链接一并更新。
+- 补了 `"category": "tsdb"`（之前没声明，影响 Grafana「Add new connection」页的分类位置）。
+
+---
+
+## 二、还需要人工决策或真实环境验证的
+
+### 1. 窗口表达式没有进 SELECT 列表（需要真实库验证）
+
+`buildWindowSql` 把窗口表达式只放在 `GROUP BY`，SELECT 里只有 `first(time) AS "time"`、tag 列和指标列。结果是**结果集里没有任何一列能标识每行属于哪个 window/session/event/state**。KWDB 自己的参考示例都会把窗口表达式 select 出来（例如 `TIME_WINDOW(ts,'1h') AS window`）。
+
+要改的话就是往 SELECT 里加一列别名后的窗口表达式，但这会改变所有窗口查询的输出结构，也会影响 `frame.go` 的列识别，**必须先在真实 KWDB 上验证**再动。
+
+### 2. `last_row` / `first_row` 的语义不一致（需要真实库验证）
+
+`latestTimeExpr` 在 `latestFunc` 为 `last_row`/`first_row` 时仍然对时间列用 `last()`/`first()`（排除 NULL），而指标列用 `last_row()`/`first_row()`（包含 NULL）。如果时间列可能为 NULL，返回的 `"time"` 和指标值可能不是同一行。KWDB 有 `last_row_ts()`/`first_row_ts()` 可以写成一致的形式，但需要确认目标版本是否支持。
+
+### 3. `interpolate` 常量模式的写法（需要真实库验证）
+
+现在生成 `interpolate(avg(v), 0)`（裸数字），KWDB 参考示例里是 `interpolate(avg(value), '0')`（带引号）。两种写法是否等价需要实测。另外 `normalizeInterpolateConstant` 把 NaN/Infinity 一律静默变成 0，UI 填错了不报错而是默默补 0。
+
+### 4. 模板变量不支持级联（功能缺口，非缺陷）
+
+`metricFindQuery` 没有调用 `getTemplateSrv().replace()`，所以 `tag_values($schema.$table, $column)` 这种用其他变量拼出来的表名不会生效。Grafana 官方指南明确建议做这件事。改动不大，但会改变变量查询的行为，需要单独一个改动加测试。
+
+### 5. `Select` / `MultiSelect` / `VerticalGroup` 已被废弃（25 条 eslint warning）
+
+`@grafana/ui` 13 里这些组件标记为 deprecated，建议改用 `Combobox` / `Stack`。涉及 10 个文件，且 e2e 的 `pickOption` helper 依赖 `getByRole('combobox')` 的选择器语义——换成 `Combobox` 后 e2e 选择器很可能要跟着改。**不建议在发布前做**，风险收益不划算；`grafanaDependency` 声明的是 `>=13.1.0`，这些 API 在 13.x 全系列都还能用。建议作为发布后的第一个专项。
+
+### 6. `.config/` 里残留脚手架时期的旧插件 ID
+
+`.config/docker-compose-base.yaml`、`.config/supervisord/supervisord.conf` 里到处是 `kaiwudb-kwdbtsdb-datasource`（最初脚手架用的 org 是 `kaiwudb`）。`.config/` 由 create-plugin 管理、不能手改，正确做法是用当前 org 重新生成后整目录覆盖。
+
+实际影响有两处，都不是功能故障：
+
+- `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS` 列的是旧 ID，但生成的 Dockerfile 里 `GF_DEFAULT_APP_MODE=development` 是硬编码的，dev 模式下未签名插件一律放行，所以本地和 CI e2e 都不受影响（已核对 Grafana 源码 `pkg/plugins/manager/signature/authorizer.go`）。
+- `GF_LOG_FILTERS: plugin.kaiwudb-kwdbtsdb-datasource:debug` 指向一个不存在的 logger 名，**我们插件的 debug 日志实际上被丢掉了**。这是个真实的观测性缺陷。
+
+建议等插件 ID 方案定了（是否沿用 `kwdb-datasource`）之后，连同 ID 切换一起重新生成 `.config/`，一次做完。
+
+### 7. TLS 的真实链路没实测过
+
+`verify-ca` / `verify-full` 需要一台开了 TLS 的 KWDB 才能验证，目前手上没有这样的实例。逻辑上 `sslrootcert` 已经透传，但没有端到端证据。
+
+### 8. 告警/注解的测试覆盖
+
+`plugin.json` 声明了 `alerting: true` 和 `annotations: true`，后端确实复用同一条查询链路。本次补了 3 个 e2e spec（见下），但告警规则本身（创建规则 → 触发 → 收到通知）仍没有覆盖。提交审核时这几乎一定被问到，建议至少补一个告警规则的端到端用例。
+
+### 9. 发布流程遗留
+
+- `GRAFANA_ACCESS_POLICY_TOKEN` 还没配到仓库 Secrets，`release.yml` 的签名步骤目前是跳过的。
+- tag `v1.2.2` 还没打。
+- `docs/api-dashboard-automation.md` 一直未跟踪，需要决定是提交还是忽略。
+
+---
+
+## 三、本次新增/改动的文件
+
+**新增**
+
+- `src/variableSupport.ts` — 变量支持类，替代废弃的 `setVariableQueryEditor`
+- `src/variableSupport.test.ts` — 6 个用例
+- `pkg/plugin/health.go` — 健康检查错误分类
+- `pkg/plugin/health_test.go` — 19 个用例
+- `pkg/models/settings_test.go` — 连接参数校验测试
+- `tests-e2e/latest-value.spec.ts` — 最新值模式 3 个用例
+- `tests-e2e/window-event.spec.ts` — 窗口/事件模式 6 个用例
+- `tests-e2e/annotations.spec.ts` — 注解 3 个用例
+- 本文档
+
+**改动**
+
+- `src/module.ts` — 移除废弃的变量编辑器注册
+- `src/datasource.ts` — 构造函数里挂 `variables`
+- `src/types.ts` — `KwdbVariableQuery` 注释说明；`format` 字段注释说明不影响 SQL
+- `src/variableQuery.ts` — 上述 5 处修复
+- `src/sqlBuilder.ts` — 上述 6 处修复
+- `src/plugin.json` — 链接地址、`category`
+- `README.md` / `src/README.md` — 仓库地址、"long format" 表述
+- `pkg/plugin/datasource.go` — `CheckHealth` 用人话错误
+- `pkg/plugin/connection.go` — 调用 `Validate()`
+- `pkg/models/settings.go` — 新增 `Validate()`
+- `tests/sqlBuilder.test.ts` / `tests/variableQuery.test.ts` — 用更完整的版本替换
+- `.github/workflows/ci.yml` — 全量 validator job、去掉硬编码容器名
+
+---
+
+## 四、验证结果
+
+| 项                         | 结果                                                        |
+| -------------------------- | ----------------------------------------------------------- |
+| `tsc --noEmit`             | 通过                                                        |
+| `eslint .`                 | 0 error，25 warning（均为 UI 组件 deprecation，见第二节 5） |
+| `jest`                     | 6 suites / 140 tests 全通过                                 |
+| `go test ./pkg/...`        | 通过                                                        |
+| `go vet ./pkg/...`         | 通过                                                        |
+| `webpack --env production` | 通过                                                        |
+| 全量 plugin-validator      | 见验证记录                                                  |
+
+> 沙箱内 Go 工具链需要用模块缓存里已有的 1.26.5，且 `GOMODCACHE` 指向 `/private/tmp/gomodcache`，否则会因为无法写锁文件而失败。命令：
+> `GOCACHE=/private/tmp/kwdb-gocache GOMODCACHE=/private/tmp/gomodcache GOPROXY=off <toolchain>/bin/go test ./pkg/...`

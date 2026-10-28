@@ -4,7 +4,7 @@ This plugin connects [Grafana](https://grafana.com) to KaiwuDB and its open-sour
 
 > 本插件适用于 KaiwuDB 及其开源版本 KWDB，可以在 Grafana 中查询、展示和分析 KWDB 时序数据。
 
-![KWDB dashboard example](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/example.png)
+![KWDB dashboard example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/example.png)
 
 ## Features
 
@@ -52,11 +52,11 @@ This plugin connects [Grafana](https://grafana.com) to KaiwuDB and its open-sour
 | Max connections | Connection pool size (default `8`). |
 | Connect timeout | Connection timeout in seconds (default `5`). |
 
-![Data source settings](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/kwdb-datasource.png)
+![Data source settings](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/kwdb-datasource.png)
 
 Click **Save & test** to verify connectivity. The backend executes `SELECT 1` and reports whether the data source is working.
 
-![Save and test](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/save-test.png)
+![Save and test](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/save-test.png)
 
 ## Query editor
 
@@ -74,7 +74,7 @@ Each visual mode generates SQL automatically and shows a read-only SQL preview.
 
 Select a table, time column, interval, tag columns for `GROUP BY`, and one or more metrics. Aggregations: `avg`, `sum`, `count`, `min`, `max`, `stddev`, `none`.
 
-![Downsampling example](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/downsampling-example.png)
+![Downsampling example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/downsampling-example.png)
 
 ### Gapfill
 
@@ -106,7 +106,7 @@ Available macros:
 ## Output formats
 
 - **Time series**: the backend finds the time column, sorts by time, converts tag columns into labels, and produces a wide time-series frame with one series per tag combination. Choose this for chart panels such as **Time series**, **Stat**, and **Gauge**.
-- **Table**: the result is returned as raw rows (long format). Choose this for the **Table** panel. Latest-values queries with tag columns additionally return one frame per tag combination by default.
+- **Table**: the result is returned as raw rows. Choose this for the **Table** panel. Latest-values queries with tag columns additionally return one frame per tag combination by default.
 
 Result rows are capped at 100,000 rows per frame. When the cap is reached, the frame includes a warning notice.
 
@@ -135,16 +135,16 @@ Read-only access is enforced in three layers:
 
 ## Development and publishing
 
-- See [DEVELOPMENT.md](https://github.com/LumingSun/kwdb-tsdb-datasource/blob/master/DEVELOPMENT.md) for local development, testing, and packaging instructions.
+- See [DEVELOPMENT.md](https://github.com/LumingSun/KWDB-Grafana-Plugin/blob/master/DEVELOPMENT.md) for local development, testing, and packaging instructions.
 - Plugin ID: `lumingsun-kwdbtsdb-datasource`; it must match the Grafana Cloud organization slug `lumingsun`.
 - First submissions do not require a signature. After review, versions are signed and released through the `Release` GitHub Actions workflow.
 - Full instructions are in the [Grafana plugin publishing guide](https://grafana.com/developers/plugin-tools/publish-a-plugin).
 
 ## Support
 
-- Report bugs and request features: [GitHub issues](https://github.com/LumingSun/kwdb-tsdb-datasource/issues)
+- Report bugs and request features: [GitHub issues](https://github.com/LumingSun/KWDB-Grafana-Plugin/issues)
 - KaiwuDB: <https://www.kaiwudb.com>
 
 ## License
 
-Apache License 2.0. See [LICENSE](https://github.com/LumingSun/kwdb-tsdb-datasource/blob/master/LICENSE).
+Apache License 2.0. See [LICENSE](https://github.com/LumingSun/KWDB-Grafana-Plugin/blob/master/LICENSE).
