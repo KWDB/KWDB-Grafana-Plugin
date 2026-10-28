@@ -45,9 +45,7 @@ function makeDatasource(): KwdbDataSource {
 function renderEditor(query: KwdbQuery) {
   const onChange = jest.fn();
   const onRunQuery = jest.fn();
-  render(
-    <QueryEditor datasource={makeDatasource()} query={query} onChange={onChange} onRunQuery={onRunQuery} />
-  );
+  render(<QueryEditor datasource={makeDatasource()} query={query} onChange={onChange} onRunQuery={onRunQuery} />);
   return { onChange, onRunQuery };
 }
 
@@ -153,8 +151,9 @@ describe('QueryEditor', () => {
         eventEndCond: undefined,
       })
     );
-    // COUNT_WINDOW needs a row limit, so no SQL is generated until one is entered.
-    expect(updated.rawSql).toBe('');
+    // COUNT_WINDOW falls back to the editor's default row limit of 100, so a
+    // statement is generated as soon as the type is selected.
+    expect(updated.rawSql).toContain('COUNT_WINDOW(100)');
   });
 
   it('keeps window fields when the current window type is selected again', async () => {

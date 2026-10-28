@@ -429,9 +429,23 @@ describe('buildWindowSql', () => {
     ).toContain('GROUP BY COUNT_WINDOW(10, 5)');
   });
 
-  it('returns an empty string for COUNT_WINDOW without a row limit', () => {
-    expect(buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW' }))).toBe('');
-    expect(buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: ' ' }))).toBe('');
+  it('defaults the COUNT_WINDOW row limit to 100, matching the editor field', () => {
+    // The editor renders "Row limit" with an initial value of 100 while the query
+    // model still has windowInterval undefined. The statement must agree with what
+    // the user sees, and must not depend on the field being touched.
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW' }))).toContain(
+      'GROUP BY COUNT_WINDOW(100)'
+    );
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '  ' }))).toContain(
+      'GROUP BY COUNT_WINDOW(100)'
+    );
+  });
+
+  it('rejects a non-numeric COUNT_WINDOW row limit', () => {
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: 'ten' }))).toBe('');
+    expect(
+      buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10; DROP TABLE sensors' }))
+    ).toBe('');
   });
 
   it('renders STATE_WINDOW from the start condition', () => {

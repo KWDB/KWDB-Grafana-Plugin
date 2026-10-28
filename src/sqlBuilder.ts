@@ -254,8 +254,13 @@ function windowTimeExpr(query: KwdbQuery): string | null {
       return `EVENT_WINDOW(${start}, ${end})`;
     }
     case 'COUNT_WINDOW': {
-      const limit = query.windowInterval?.trim();
-      if (!limit || !NUMERIC_RE.test(limit)) {
+      // Defaults to 100 because that is the initial value the editor shows in
+      // the "Row limit" field. Without the default the two disagree: the field
+      // reads 100 while the generated statement is empty, and setting the field
+      // to the value it already displays is a no-op for a React controlled
+      // input, so the user cannot make the preview appear by typing it in.
+      const limit = query.windowInterval?.trim() || '100';
+      if (!NUMERIC_RE.test(limit)) {
         return null;
       }
       const slide = query.windowSlide?.trim();
