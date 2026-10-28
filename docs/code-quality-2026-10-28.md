@@ -25,20 +25,24 @@
 
 写测试时发现了 15 处问题，其中**会直接产生错误 SQL 或破坏往返一致性**的已经修掉：
 
-| #   | 位置                                              | 问题                                                                                                                                                                                                                                              | 修法                                                                                                                                                        |
-| --- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `src/sqlBuilder.ts` `timeExpr`                    | `timeColumn` 未 trim 就进了 `time_bucket(...)`，而 WHERE 子句用的是 trim 后的值。列名带首尾空格时 SELECT 与 WHERE 引用的列名不一致，SQL 直接报错                                                                                                  | `timeExpr` 改为接收已 trim 的 timeColumn                                                                                                                    |
-| 2   | `src/sqlBuilder.ts` `aggregationExpr`             | 指标列名同样从不 trim（`table` 和 `tags` 都 trim 了，只有指标列漏了），会静默生成 `avg(" temperature ")`                                                                                                                                          | 统一 trim                                                                                                                                                   |
-| 3   | `src/sqlBuilder.ts` `timeExpr` / `windowTimeExpr` | `interval \|\| '5m'` 只对 `undefined`/`''` 兜底，纯空白字符串会原样进 SQL，`time_bucket(ts, '   ')` 是硬错误                                                                                                                                      | 空白一律视为未设置                                                                                                                                          |
-| 4   | `src/sqlBuilder.ts` `windowTimeExpr`              | `EVENT_WINDOW`/`STATE_WINDOW` 的条件表达式和 `COUNT_WINDOW` 的行数**原样拼接、零校验零转义**。`COUNT_WINDOW(10; DROP TABLE sensors)` 这类输入会被完整拼进语句                                                                                     | 条件片段拒绝 `;`、`--`、`/*`、`*/`；COUNT_WINDOW 参数限制为数字。后端只读校验是最后一道防线，编辑器这一层负责在用户写错时给出可预期的行为而不是让数据库报错 |
-| 5   | `src/sqlBuilder.ts` `metricAlias`                 | L55/L58 是**不可达死代码**（两个调用点都已提前判断 alias 并用短路求值），也正是覆盖率里唯一没覆盖到的两行                                                                                                                                         | 删掉不可达分支，函数收敛为单一职责                                                                                                                          |
-| 6   | `src/sqlBuilder.ts` `quoteQualified`              | 按 `.` 无条件切分，合法引号标识符 `"my.table"` 被改写成 `"my"."table"`                                                                                                                                                                            | 只在引号外的点才算分隔符                                                                                                                                    |
-| 7   | `src/variableQuery.ts`                            | `split(',')` 不识别引号，`tag_values("my,sensors", device_id)` 被误判成参数个数错误                                                                                                                                                               | 改成引号感知的切分                                                                                                                                          |
-| 8   | `src/variableQuery.ts`                            | `buildVariableQueryString` 的 switch 没有 default，运行时可能返回 `undefined`（声明类型是 `string`）；缺 table/column 时会生成 `columns()`、`tag_values(sensors, )` 这类**自己 parse 不回去**的字符串，Grafana 变量列表里显示的查询插件自己会拒绝 | 补齐 default 分支抛错；缺字段时抛错；含逗号的参数加引号保证往返                                                                                             |
-| 9   | `src/variableQuery.ts`                            | 分号剥离发生在 trim 之后且不再 trim，`tables() ;`（分号前有空格）会报"不支持的变量查询"，错误信息有误导性                                                                                                                                         | 空白和分号一起从尾部剥离                                                                                                                                    |
-| 10  | `src/variableQuery.ts`                            | 结构化输入只校验 `columns`/`tagValues`，其他 queryType 原样放行；且返回的是**入参对象引用**，调用方改动会污染解析结果                                                                                                                             | 穷举校验 + 返回拷贝                                                                                                                                         |
-| 11  | `src/variableQuery.ts`                            | 正则过松，`columns(a)(b)` 会被当成表名 `a)(b` 接受                                                                                                                                                                                                | 参数中拒绝括号                                                                                                                                              |
-| 12  | `src/README.md` / `README.md`                     | 文档写"Table: long format"，但 `KwdbQueryFormat` 只有 `time_series \| table`，没有 `long`                                                                                                                                                         | 改掉表述                                                                                                                                                    |
+| #   | 位置                                              | 问题                                                                                                                                                                                                                                                                                                               | 修法                                                                                                                                                        |
+| --- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `src/sqlBuilder.ts` `timeExpr`                    | `timeColumn` 未 trim 就进了 `time_bucket(...)`，而 WHERE 子句用的是 trim 后的值。列名带首尾空格时 SELECT 与 WHERE 引用的列名不一致，SQL 直接报错                                                                                                                                                                   | `timeExpr` 改为接收已 trim 的 timeColumn                                                                                                                    |
+| 2   | `src/sqlBuilder.ts` `aggregationExpr`             | 指标列名同样从不 trim（`table` 和 `tags` 都 trim 了，只有指标列漏了），会静默生成 `avg(" temperature ")`                                                                                                                                                                                                           | 统一 trim                                                                                                                                                   |
+| 3   | `src/sqlBuilder.ts` `timeExpr` / `windowTimeExpr` | `interval \|\| '5m'` 只对 `undefined`/`''` 兜底，纯空白字符串会原样进 SQL，`time_bucket(ts, '   ')` 是硬错误                                                                                                                                                                                                       | 空白一律视为未设置                                                                                                                                          |
+| 4   | `src/sqlBuilder.ts` `windowTimeExpr`              | `EVENT_WINDOW`/`STATE_WINDOW` 的条件表达式和 `COUNT_WINDOW` 的行数**原样拼接、零校验零转义**。`COUNT_WINDOW(10; DROP TABLE sensors)` 这类输入会被完整拼进语句                                                                                                                                                      | 条件片段拒绝 `;`、`--`、`/*`、`*/`；COUNT_WINDOW 参数限制为数字。后端只读校验是最后一道防线，编辑器这一层负责在用户写错时给出可预期的行为而不是让数据库报错 |
+| 5   | `src/sqlBuilder.ts` `metricAlias`                 | L55/L58 是**不可达死代码**（两个调用点都已提前判断 alias 并用短路求值），也正是覆盖率里唯一没覆盖到的两行                                                                                                                                                                                                          | 删掉不可达分支，函数收敛为单一职责                                                                                                                          |
+| 6   | `src/sqlBuilder.ts` `quoteQualified`              | 按 `.` 无条件切分，合法引号标识符 `"my.table"` 被改写成 `"my"."table"`                                                                                                                                                                                                                                             | 只在引号外的点才算分隔符                                                                                                                                    |
+| 7   | `src/variableQuery.ts`                            | `split(',')` 不识别引号，`tag_values("my,sensors", device_id)` 被误判成参数个数错误                                                                                                                                                                                                                                | 改成引号感知的切分                                                                                                                                          |
+| 8   | `src/variableQuery.ts`                            | `buildVariableQueryString` 的 switch 没有 default，运行时可能返回 `undefined`（声明类型是 `string`）；缺 table/column 时会生成 `columns()`、`tag_values(sensors, )` 这类**自己 parse 不回去**的字符串，Grafana 变量列表里显示的查询插件自己会拒绝                                                                  | 补齐 default 分支抛错；缺字段时抛错；含逗号的参数加引号保证往返                                                                                             |
+| 9   | `src/variableQuery.ts`                            | 分号剥离发生在 trim 之后且不再 trim，`tables() ;`（分号前有空格）会报"不支持的变量查询"，错误信息有误导性                                                                                                                                                                                                          | 空白和分号一起从尾部剥离                                                                                                                                    |
+| 10  | `src/variableQuery.ts`                            | 结构化输入只校验 `columns`/`tagValues`，其他 queryType 原样放行；且返回的是**入参对象引用**，调用方改动会污染解析结果                                                                                                                                                                                              | 穷举校验 + 返回拷贝                                                                                                                                         |
+| 11  | `src/variableQuery.ts`                            | 正则过松，`columns(a)(b)` 会被当成表名 `a)(b` 接受                                                                                                                                                                                                                                                                 | 参数中拒绝括号                                                                                                                                              |
+| 12  | `src/README.md` / `README.md`                     | 文档写"Table: long format"，但 `KwdbQueryFormat` 只有 `time_series \| table`，没有 `long`                                                                                                                                                                                                                          | 改掉表述                                                                                                                                                    |
+| 13  | `src/sqlBuilder.ts` `windowTimeExpr`              | **COUNT_WINDOW 的行数没有默认值，而编辑器"Row limit"字段显示 `100`**。刚切到 COUNT_WINDOW 时模型里 `windowInterval` 是 `undefined`，生成的 SQL 是空字符串——用户看着字段里写着 100，SQL 预览却是空的。而且因为是 React 受控组件，把字段设成它已经显示的值不会触发 `onChange`，用户想靠输入"100"把预览弄出来也做不到 | 生成侧默认 `100`，与编辑器一致。这一条是 e2e 真机跑出来的                                                                                                   |
+| 14  | `tests/queryChanges.test.ts`（新增）              | `tableChangePatch` / `windowTypeChangePatch` 这两个切换表/窗口类型时重置字段的纯逻辑模块没有测试，而它们的语义（`windowInterval` 在 TIME_WINDOW 是时长、在 COUNT_WINDOW 是行数，所以切换时必须清掉）很容易被后来人改错                                                                                             | 补 8 个用例                                                                                                                                                 |
+
+> 第 13 条说明一件事：**e2e 真机跑一遍能发现单测发现不了的问题**。受控输入框"显示值和模型值不一致"这类问题，单元测试只会按给定的模型算 SQL，永远不会撞上。
 
 ### 3. 变量支持 API 已废弃（已修）
 
@@ -120,11 +124,20 @@
 
 `plugin.json` 声明了 `alerting: true` 和 `annotations: true`，后端确实复用同一条查询链路。本次补了 3 个 e2e spec（见下），但告警规则本身（创建规则 → 触发 → 收到通知）仍没有覆盖。提交审核时这几乎一定被问到，建议至少补一个告警规则的端到端用例。
 
-### 9. 发布流程遗留
+### 9. e2e 真机跑出来的三个新发现
+
+e2e 是在 **Grafana 13.1.0 容器 + 真实 KWDB 实例**上跑的（新 spec 13 passed，全套回归 21 passed / 0 failed；默认配置缺表示例表时 12 skipped，确认 skip 逻辑生效而不是静默通过）。这一轮真机验证带回来三件事：
+
+1. **窗口查询在长时间范围上会撑爆 KWDB 的内存预算。** `TIME_WINDOW(ts, '1h', '15m')` 跑 30 天直接报 `group-window-func: memory budget exceeded`，滑动窗口和 `COUNT_WINDOW` 最严重。这是数据库侧限制，不是插件的问题，但用户一定会撞上，所以两个 README 的 Troubleshooting 里都加了说明（缩窄时间范围，或者去掉 slide 让窗口边界和范围对齐）。e2e 的窗口用例因此用短的配置化时间范围。
+2. **注解查询必须用 Table 格式。** Grafana 从 `time` 列加一个文本列推导注解事件，构建器查询默认给的是 `time_series` 格式，会报 `could not convert frame to time series`。后端已有的错误信息写得很清楚（"select Table format for non-time results"），README 也补了说明。没有改成自动降级——静默换格式会掩盖真正的配置错误，明确报错更好。
+3. **`AnnotationEditPage.runQuery()` 本身有竞态。** Grafana 的注解编辑器每次变更都会重发 `/api/ds/query`，`runQuery()` 可能拿到另一个在途请求的响应体。这是 `@grafana/plugin-e2e` 的问题，spec 里改成按请求体里的 SQL 片段匹配响应绕过了。
+
+### 10. 发布流程遗留
 
 - `GRAFANA_ACCESS_POLICY_TOKEN` 还没配到仓库 Secrets，`release.yml` 的签名步骤目前是跳过的。
-- tag `v1.2.2` 还没打。
-- `docs/api-dashboard-automation.md` 一直未跟踪，需要决定是提交还是忽略。
+- tag `v1.2.2` 还没打；本次改动对应 `v1.2.3`。
+- `docs/api-dashboard-automation.md` 原先一直未跟踪，本次已提交（它是一份已在 Grafana 13.1.0 + KWDB 上验证过的 API 自动化指南）。
+- `docs/plugin-comparison-2026-10-28.md`（给研发/开源负责人的对比报告）**故意没有提交**，留在工作区，由你决定是否归档。
 
 ---
 
@@ -148,13 +161,14 @@
 - `src/datasource.ts` — 构造函数里挂 `variables`
 - `src/types.ts` — `KwdbVariableQuery` 注释说明；`format` 字段注释说明不影响 SQL
 - `src/variableQuery.ts` — 上述 5 处修复
-- `src/sqlBuilder.ts` — 上述 6 处修复
+- `src/sqlBuilder.ts` — 上述 6 处修复，外加 COUNT_WINDOW 默认行数
 - `src/plugin.json` — 链接地址、`category`
-- `README.md` / `src/README.md` — 仓库地址、"long format" 表述
+- `README.md` / `src/README.md` — 仓库地址、"long format" 表述、窗口内存预算与注解格式两条 Troubleshooting
 - `pkg/plugin/datasource.go` — `CheckHealth` 用人话错误
 - `pkg/plugin/connection.go` — 调用 `Validate()`
 - `pkg/models/settings.go` — 新增 `Validate()`
 - `tests/sqlBuilder.test.ts` / `tests/variableQuery.test.ts` — 用更完整的版本替换
+- `tests/queryChanges.test.ts`（新增）— 表/窗口类型切换时的字段重置
 - `.github/workflows/ci.yml` — 全量 validator job、去掉硬编码容器名
 
 ---
@@ -165,11 +179,14 @@
 | -------------------------- | ----------------------------------------------------------- |
 | `tsc --noEmit`             | 通过                                                        |
 | `eslint .`                 | 0 error，25 warning（均为 UI 组件 deprecation，见第二节 5） |
-| `jest`                     | 6 suites / 140 tests 全通过                                 |
+| `jest`                     | 7 suites / 148 tests 全通过                                 |
 | `go test ./pkg/...`        | 通过                                                        |
 | `go vet ./pkg/...`         | 通过                                                        |
+| `gofmt -l pkg/`            | 干净                                                        |
 | `webpack --env production` | 通过                                                        |
-| 全量 plugin-validator      | 见验证记录                                                  |
+| `mage buildAll`            | 6 个平台二进制通过                                          |
+| 全量 plugin-validator      | 仅 `unsigned plugin` 一条 warning（未发布插件的预期结果）   |
+| e2e（真机）                | 新 spec 13 passed；全套回归 21 passed / 0 failed            |
 
 > 沙箱内 Go 工具链需要用模块缓存里已有的 1.26.5，且 `GOMODCACHE` 指向 `/private/tmp/gomodcache`，否则会因为无法写锁文件而失败。命令：
 > `GOCACHE=/private/tmp/kwdb-gocache GOMODCACHE=/private/tmp/gomodcache GOPROXY=off <toolchain>/bin/go test ./pkg/...`

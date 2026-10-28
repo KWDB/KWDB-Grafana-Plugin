@@ -9,6 +9,10 @@
   whitespace: the SELECT list and the WHERE clause now quote the same
   identifier, and a blank interval falls back to the 5m default instead of
   being interpolated verbatim.
+- `COUNT_WINDOW` falls back to a row limit of 100, the value the "Row limit"
+  field shows. Previously a newly selected `COUNT_WINDOW` generated an empty
+  statement while the field read 100, and because the field is a controlled
+  input, typing the value it already displayed did not regenerate the SQL.
 - Window/event queries validate their free-form arguments. Event and state
   conditions that could terminate the statement or open a comment, and
   `COUNT_WINDOW` limits that are not numbers, are now rejected by the builder
@@ -21,6 +25,12 @@
   whitespace no longer produces a misleading "unsupported variable query" error.
 - Structured variable queries are validated for every query type and returned as
   a copy, so a caller can no longer mutate the parsed result.
+
+### Documentation
+
+- Troubleshooting covers `group-window-func: memory budget exceeded` (sliding
+  and count windows buffer the whole requested range in KWDB) and the
+  requirement that an annotation query use Table format.
 
 ### Changed
 
@@ -43,10 +53,12 @@
 - Unit tests for the SQL builder and the template variable query parser,
   covering all five builder modes, identifier quoting, macro injection and the
   parse/render round trip. These modules previously had no coverage.
-- Unit tests for the variable support class, the health check error
-  classification and the connection settings validation.
+- Unit tests for the field reset applied when the table or the window type
+  changes, the variable support class, the health check error classification and
+  the connection settings validation.
 - End-to-end tests for the latest values and window/event builder modes and for
-  annotation queries.
+  annotation queries. Verified against a real Grafana 13.1.0 container and a
+  live KWDB instance: 13 new cases pass and the full suite stays green.
 - CI now runs the complete Grafana plugin validator on every pull request.
   Previously only the metadata analyzer ran in CI; the full validator ran only
   in the release workflow, which had never been executed.
