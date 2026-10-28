@@ -188,5 +188,10 @@ e2e 是在 **Grafana 13.1.0 容器 + 真实 KWDB 实例**上跑的（新 spec 13
 | 全量 plugin-validator      | 仅 `unsigned plugin` 一条 warning（未发布插件的预期结果）   |
 | e2e（真机）                | 新 spec 13 passed；全套回归 21 passed / 0 failed            |
 
+> **CI 全量 validator 第一次实跑就抓到两个真问题**，这正是把它接进 CI 的理由：
+> ① 改了 Go 文件没有重新 `mage buildAll`，`go_plugin_build_manifest` 里的 sha256 对不上，`go-manifest` analyzer 直接报错，LLM review 和 code diff 都被跳过；
+> ② `actions/upload-artifact` **不保留文件权限**，后端二进制从 artifact 里取出来是 0644，而 `binarypermissions` analyzer 要求严格 0755。playwright job 里本来就有 `chmod +x ./dist/gpx_*` 这一步（同一个原因），validator job 漏了。
+> 两个都在本地复现并修掉。`release.yml` 不受影响——它在同一个 job 里构建完直接打包，没有 artifact 往返。
+
 > 沙箱内 Go 工具链需要用模块缓存里已有的 1.26.5，且 `GOMODCACHE` 指向 `/private/tmp/gomodcache`，否则会因为无法写锁文件而失败。命令：
 > `GOCACHE=/private/tmp/kwdb-gocache GOMODCACHE=/private/tmp/gomodcache GOPROXY=off <toolchain>/bin/go test ./pkg/...`
