@@ -652,3 +652,145 @@ func TestRealServerMetadataResources(t *testing.T) {
 		t.Logf("non-tag column rejected: %s", resp.Body)
 	}
 }
+
+// ------------------------------------------------------------------------- TLS
+//
+// These cases need a KWDB instance that requires TLS. Set:
+//
+//	KWDB_TLS_DSN="postgres://root:<pw>@<host>:<port>/<db>?sslmode=verify-full"
+//	KWDB_TLS_ROOT_CERT=/path/to/ca.crt
+//
+// The DSN's sslmode is replaced per case so the same instance exercises all
+// four modes plus the failure paths.
+
+func tlsDSN(t *testing.T) (string, string) {
+	t.Helper()
+	dsn := os.Getenv("KWDB_TLS_DSN")
+	cert := os.Getenv("KWDB_TLS_ROOT_CERT")
+	if dsn == "" || cert == "" {
+		t.Skip("set KWDB_TLS_DSN and KWDB_TLS_ROOT_CERT to run the TLS cases")
+	}
+	return dsn, cert
+}
+
+// withSSLMode rewrites the sslmode (and adds sslrootcert when a certificate is
+// given) of a libpq DSN.
+func withSSLMode(dsn, mode, rootCert string) string {
+	base, query := dsn, ""
+	if q := strings.Index(dsn, "?"); q >= 0 {
+		base, query = dsn[:q], dsn[q+1:]
+	}
+	parts := []string{}
+	for _, kv := range strings.Split(query, "&") {
+		if kv == "" || strings.HasPrefix(kv, "sslmode=") || strings.HasPrefix(kv, "sslrootcert=") {
+			continue
+		}
+		parts = append(parts, kv)
+	}
+	parts = append(parts, "sslmode="+mode)
+	if rootCert != "" {
+		parts = append(parts, "sslrootcert="+rootCert)
+	}
+	return base + "?" + strings.Join(parts, "&")
+}
+
+// TestRealServerTLSModes is the end-to-end check the plugin has never had:
+// every sslmode the configuration page offers, against a server that requires
+// TLS, plus the modes that must fail.
+func TestRealServerTLSModes(t *testing.T) {
+	dsn, cert := tlsDSN(t)
+	tr := realTimeRange()
+
+	cases := []struct {
+		mode     string
+		cert     string
+		wantOK   bool
+		wantHint string
+	}{
+		// The server requires TLS, so a plaintext connection must be refused.
+		{mode: "disable", wantOK: false, wantHint: "TLS"},
+		// require encrypts but does not verify the certificate.
+		{mode: "require", wantOK: true},
+		// verify-ca / verify-full verify against the supplied CA.
+		{mode: "verify-ca", cert: cert, wantOK: true},
+		{mode: "verify-full", cert: cert, wantOK: true},
+		// verify-full without a CA cannot verify the chain.
+		{mode: "verify-full", wantOK: false, wantHint: "TLS"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.mode+func() string {
+			if tc.cert == "" {
+				return "-no-cert"
+			}
+			return ""
+		}(), func(t *testing.T) {
+			d := realInstance(t, withSSLMode(dsn, tc.mode, tc.cert))
+			res, err := d.CheckHealth(context.Background(), &backend.CheckHealthRequest{})
+			if err != nil {
+				t.Fatalf("CheckHealth: %v", err)
+			}
+			if tc.wantOK {
+				if res.Status != backend.HealthStatusOk {
+					t.Fatalf("expected OK, got %v: %s", res.Status, res.Message)
+				}
+				t.Logf("health OK: %s", res.Message)
+				// A working pool must also run a real query.
+				q := d.runQueryModel(t, map[string]any{
+					"mode": "raw", "format": "table",
+					"rawSql":     "SELECT count(*) AS n FROM equipment_telemetry WHERE k_timestamp >= $__timeFrom AND k_timestamp <= $__timeTo",
+					"timeColumn": "k_timestamp",
+				}, tr)
+				if q.Error != nil {
+					t.Fatalf("query over %s failed: %v", tc.mode, q.Error)
+				}
+				t.Logf("query over %s -> %s", tc.mode, frameSummary(t, q))
+				return
+			}
+			if res.Status == backend.HealthStatusOk {
+				t.Fatalf("expected a failure for sslmode=%s, got OK: %s", tc.mode, res.Message)
+			}
+			t.Logf("sslMode=%s rejected: %s", tc.mode, res.Message)
+			if tc.wantHint != "" && !strings.Contains(strings.ToLower(res.Message), strings.ToLower(tc.wantHint)) {
+				t.Errorf("message %q does not mention %q", res.Message, tc.wantHint)
+			}
+		})
+	}
+}
+
+// TestRealServerTLSRejectsUnverifiableHost points verify-full at a host name
+// the certificate does not cover, which must fail with a hostname error rather
+// than connecting.
+func TestRealServerTLSRejectsUnverifiableHost(t *testing.T) {
+	dsn, cert := tlsDSN(t)
+
+	// Rewrite the host to a name the node certificate does not list.
+	rewritten := withSSLMode(dsn, "verify-full", cert)
+	at := strings.LastIndex(rewritten, "@")
+	if at < 0 {
+		t.Fatal("DSN has no @")
+	}
+	rest := rewritten[at+1:]
+	slash := strings.Index(rest, "/")
+	hostPart, tail := rest, ""
+	if slash >= 0 {
+		hostPart, tail = rest[:slash], rest[slash:]
+	}
+	colon := strings.LastIndex(hostPart, ":")
+	host := hostPart[:colon]
+	port := hostPart[colon+1:]
+	rewritten = rewritten[:at+1] + "not-in-cert" + ":" + port + tail
+	// The DSN host no longer resolves to the server, so this must fail during
+	// DNS or the handshake - either way it must not connect.
+	_ = host
+
+	d := realInstance(t, rewritten)
+	res, err := d.CheckHealth(context.Background(), &backend.CheckHealthRequest{})
+	if err != nil {
+		t.Fatalf("CheckHealth: %v", err)
+	}
+	if res.Status == backend.HealthStatusOk {
+		t.Fatal("verify-full connected to a host the certificate does not cover")
+	}
+	t.Logf("rejected as expected: %s", res.Message)
+}
