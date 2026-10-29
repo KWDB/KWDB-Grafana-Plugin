@@ -42,7 +42,7 @@ npx ts-node --compiler-options '{"module":"commonjs","moduleResolution":"node","
 ## 记录结果
 
 2026-10-29 对一台真实 KWDB 实例重跑：56 条中 52 条通过、0 失败、4 条按设计返回空串、0 条按设计失败。legacy gapfill 的 `none` 已在 SQL 层纠正为 `avg`，`WN-gapfill-agg-none` 通过。
-完整报告（地址与账号已脱敏）见 `../docs/real-server-verification-2026-10-29.md`。
+完整报告（地址与账号已脱敏）为内部文档，不随仓库发布。
 
 ## TLS 验证用的证书
 
@@ -67,4 +67,4 @@ kwbase cert create-client root --certs-dir=<dir> --ca-key=<dir>/ca.key
 
 注意 `create-node` 的 `--host` 要带 **DNS 名**：libpq 的 `verify-full` 连 IP 主机时，OpenSSL 的 `X509_check_host()` 不匹配 IP SAN，只给 IP 会报 `certificate for "localhost" does not match host name`。Go/pgx 原生支持 IP SAN，不受影响。
 
-完整结论见 `../docs/real-server-verification-2026-10-29.md` 第六节。
+完整结论见内部真机验证报告第六节（不随仓库发布）。

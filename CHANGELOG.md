@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Plugin ID changed from `lumingsun-kwdbtsdb-datasource` to `kwdb-datasource`,
+  matching the company Grafana Cloud organization `kwdb`. The previous ID was
+  never published to the Grafana catalog, so there is no catalog upgrade path;
+  users of the pre-release ZIP must reinstall the plugin and recreate their data
+  sources.
+
 ## v1.3.0 (2026-10-29)
 
 ### Added
@@ -18,11 +28,11 @@
   pull request, with the same command and version as the release workflow.
   Previously only the metadata analyzer ran in CI; the release workflow has run
   the full validator since v1.2.2 (2026-10-28).
-- `docs/real-server-verification-2026-10-29.md` records the end-to-end runs
+- An internal real-server verification report records the end-to-end runs
   against live KWDB instances (addresses and accounts redacted): generated SQL
   statements, the Go backend pipeline, Playwright specs, the alerting path and
   the TLS modes (`require`, `verify-ca`, `verify-full`, plus plaintext
-  rejection).
+  rejection). The report is not published in this repository.
 - `RoadMap.md` / `RoadMap_en.md` describe the release plan and the items that
   are explicitly out of scope.
 - `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md` and GitHub issue / PR

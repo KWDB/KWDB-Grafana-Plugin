@@ -48,7 +48,7 @@ Grafana time series or table data.
 
 ### Grafana plugin catalog
 
-Install `lumingsun-kwdbtsdb-datasource` from the Grafana plugin catalog once it
+Install `kwdb-datasource` from the Grafana plugin catalog once it
 is published, then add a `KWDB TSDB` data source.
 
 ### grafana-cli
@@ -56,7 +56,7 @@ is published, then add a `KWDB TSDB` data source.
 When the plugin is published, install it from the command line:
 
 ```bash
-grafana-cli plugins install lumingsun-kwdbtsdb-datasource
+grafana-cli plugins install kwdb-datasource
 ```
 
 Restart Grafana after installation.
@@ -64,7 +64,7 @@ Restart Grafana after installation.
 ### Manual ZIP installation
 
 1. Build and sign the plugin.
-2. Rename `dist` to `lumingsun-kwdbtsdb-datasource`.
+2. Rename `dist` to `kwdb-datasource`.
 3. Create a ZIP archive.
 4. Extract it into Grafana's plugin directory.
 5. Restart Grafana.
@@ -383,7 +383,7 @@ write.
   development workflow and the pull request checklist.
 - To report a security vulnerability, follow [SECURITY.md](SECURITY.md) instead
   of opening a public issue.
-- Plugin ID: `lumingsun-kwdbtsdb-datasource`
+- Plugin ID: `kwdb-datasource`
 - First submissions do not require a signature. After review, versions are
   signed and released through the `Release` GitHub Actions workflow.
 - Full publishing instructions:
