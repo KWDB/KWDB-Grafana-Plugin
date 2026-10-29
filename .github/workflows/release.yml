@@ -3,12 +3,12 @@
 # The steps are spelled out explicitly (instead of using
 # grafana/plugin-actions/build-plugin) so the build is auditable: frontend build,
 # mage buildAll for the backend, optional signing, a tag/version consistency
-# check, packaging, a blocking run of the Grafana plugin validator, and the
-# GitHub release. Official actions/* use Dependabot-maintained major-version
-# tags; third-party actions are pinned to commit SHAs. The validator is a hard
-# gate again now that create-plugin 7.16 replaced eslint-webpack-plugin with
-# diagnostics-webpack-plugin, which removed the `braces` dependency that used
-# to fail osv-scanner.
+# check, packaging (with SHA1 and SHA256 checksums), a blocking run of the
+# Grafana plugin validator, and the GitHub release. Official actions/* use
+# Dependabot-maintained major-version tags; third-party actions are pinned to
+# commit SHAs. The validator is a hard gate again now that create-plugin 7.16
+# replaced eslint-webpack-plugin with diagnostics-webpack-plugin, which removed
+# the `braces` dependency that used to fail osv-scanner.
 name: Release
 
 on:
@@ -92,12 +92,33 @@ jobs:
 
           mv dist "${PLUGIN_ID}"
           zip -r "${ARCHIVE}" "${PLUGIN_ID}" >/dev/null
-          sha256sum "${ARCHIVE}" | cut -d' ' -f1 > "${ARCHIVE}.sha256"
+
+          # The Grafana plugin submission form ("Submit New Plugin") asks for
+          # the SHA1 of the archive behind the URL, so a release that only
+          # ships a .sha256 cannot be registered in the catalog. SHA-256 is kept
+          # as the stronger digest for anyone already verifying against it.
+          # Both are published.
+          SHA1="$(sha1sum "${ARCHIVE}" | cut -d' ' -f1)"
+          SHA256="$(sha256sum "${ARCHIVE}" | cut -d' ' -f1)"
+
+          # Fail here, not at submission time, if the algorithm is ever swapped
+          # again: this length check is what the v1.3.0 regression would have
+          # tripped.
+          if [ "${#SHA1}" -ne 40 ] || [ "${#SHA256}" -ne 64 ]; then
+            echo "::error::Unexpected digest length (SHA1 ${#SHA1}, SHA256 ${#SHA256})."
+            echo "The release must ship a 40-character SHA1 for plugin registration."
+            exit 1
+          fi
+
+          printf '%s\n' "${SHA1}" > "${ARCHIVE}.sha1"
+          printf '%s\n' "${SHA256}" > "${ARCHIVE}.sha256"
 
           echo "archive=${ARCHIVE}" >> "$GITHUB_OUTPUT"
           echo "plugin-id=${PLUGIN_ID}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Packaged ${ARCHIVE} ($(du -h "${ARCHIVE}" | cut -f1))"
+          echo "SHA1:   ${SHA1}"
+          echo "SHA256: ${SHA256}"
 
       - name: Validate plugin
         run: |
@@ -127,6 +148,15 @@ jobs:
             echo "Version: \`${{ steps.package.outputs.version }}\`"
             echo
             cat release-notes.md
+            echo
+            echo "### Checksums"
+            echo
+            echo '```'
+            echo "SHA1:   $(cat "${{ steps.package.outputs.archive }}.sha1")"
+            echo "SHA256: $(cat "${{ steps.package.outputs.archive }}.sha256")"
+            echo '```'
+            echo
+            echo "The SHA1 is the value the Grafana plugin submission form asks for."
           } > release-body.md
 
       - name: Create GitHub release
@@ -135,6 +165,7 @@ jobs:
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             "${{ steps.package.outputs.archive }}" \
+            "${{ steps.package.outputs.archive }}.sha1" \
             "${{ steps.package.outputs.archive }}.sha256" \
             --title "${GITHUB_REF_NAME}" \
             --notes-file release-body.md \

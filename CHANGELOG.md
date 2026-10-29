@@ -10,6 +10,15 @@
   users of the pre-release ZIP must reinstall the plugin and recreate their data
   sources.
 
+### Fixed
+
+- Release assets carry a `.sha1` checksum again. The Grafana plugin submission
+  form asks for the SHA-1 of the archive behind the URL; releases from v1.3.0
+  on shipped only `.sha256`, so that value had to be computed by hand before a
+  submission. The release workflow now writes `.sha1` and `.sha256` side by
+  side, and the missing `.sha1` was added to the already published v1.4.0
+  release.
+
 ## v1.3.0 (2026-10-29)
 
 ### Added

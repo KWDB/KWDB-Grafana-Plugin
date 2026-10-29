@@ -95,3 +95,18 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 
 The GitHub release workflow builds and packages all platform binaries
 automatically.
+
+## Release artifacts
+
+Every release attaches the plugin archive and two checksum files:
+
+- `<plugin-id>-<version>.zip.sha1` — the value the Grafana plugin submission
+  form asks for ("SHA1" of the archive URL). A version cannot be submitted to
+  the plugin catalog without it.
+- `<plugin-id>-<version>.zip.sha256` — the stronger digest, for integrity
+  checks and for anyone already verifying against SHA-256.
+
+Both files are written by the `Package plugin` step in
+`.github/workflows/release.yml` and listed in the release notes. Keep the
+`.sha1` file when touching that step: dropping it breaks plugin registration
+even though the build and the validator still pass.
