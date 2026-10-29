@@ -1,4 +1,4 @@
-module github.com/kaiwudb/kwdb-tsdb-datasource
+module github.com/KWDB/kwdb-grafana-plugin
 
 go 1.26.10
 

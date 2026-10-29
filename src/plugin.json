@@ -10,18 +10,17 @@
   "executable": "gpx_kwdb_tsdb_datasource",
   "category": "tsdb",
   "info": {
-    "description": "Connect Grafana to KaiwuDB and KWDB time-series engines. Query, visualize, and analyze time-series data with a visual SQL builder or raw SQL.",
+    "description": "Connect Grafana to KWDB. Query, visualize, and analyze time-series data with a visual SQL builder or raw SQL.",
     "author": {
-      "name": "Kaiwudb",
-      "url": "https://www.kaiwudb.com"
+      "name": "KWDB",
+      "url": "https://www.kaiwudb.com/community"
     },
     "keywords": [
       "datasource",
       "time series",
       "TSDB",
       "SQL",
-      "KWDB",
-      "KaiwuDB"
+      "KWDB"
     ],
     "logos": {
       "small": "img/logo.svg",
@@ -30,19 +29,19 @@
     "links": [
       {
         "name": "GitHub",
-        "url": "https://github.com/LumingSun/KWDB-Grafana-Plugin"
+        "url": "https://github.com/KWDB/kwdb-grafana-plugin"
       },
       {
         "name": "Documentation",
-        "url": "https://www.kaiwudb.com"
+        "url": "https://www.kaiwudb.com/community"
       },
       {
         "name": "Support",
-        "url": "https://github.com/LumingSun/KWDB-Grafana-Plugin/issues"
+        "url": "https://github.com/KWDB/kwdb-grafana-plugin/issues"
       },
       {
         "name": "License",
-        "url": "https://github.com/LumingSun/KWDB-Grafana-Plugin/blob/main/LICENSE"
+        "url": "https://github.com/KWDB/kwdb-grafana-plugin/blob/main/LICENSE"
       }
     ],
     "screenshots": [

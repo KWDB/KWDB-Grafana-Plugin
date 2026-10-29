@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/kaiwudb/kwdb-tsdb-datasource/pkg/models"
+	"github.com/KWDB/kwdb-grafana-plugin/pkg/models"
 )
 
 const (

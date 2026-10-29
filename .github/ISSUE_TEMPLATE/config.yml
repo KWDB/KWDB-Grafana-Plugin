@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/LumingSun/KWDB-Grafana-Plugin/security/advisories/new
+    url: https://github.com/KWDB/kwdb-grafana-plugin/security/advisories/new
     about: Report vulnerabilities privately through GitHub Security Advisories. Do not open a public issue.
