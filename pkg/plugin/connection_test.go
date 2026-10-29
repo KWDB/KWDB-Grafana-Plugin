@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/kaiwudb/kwdb-tsdb-datasource/pkg/models"
+	"github.com/KWDB/kwdb-grafana-plugin/pkg/models"
 )
 
 func TestApplyDefaults(t *testing.T) {

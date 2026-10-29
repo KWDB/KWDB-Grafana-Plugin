@@ -13,7 +13,7 @@
     "server": "docker compose up --build",
     "sign": "sign-plugin"
   },
-  "author": "Kaiwudb",
+  "author": "KWDB",
   "license": "Apache-2.0",
   "devDependencies": {
     "@grafana/eslint-config": "^10.0.0",

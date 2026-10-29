@@ -1,14 +1,12 @@
-# KaiwuDB / KWDB Grafana Data Source Plugin
+# KWDB Grafana Data Source Plugin
 
-This plugin connects [Grafana](https://grafana.com) to KaiwuDB and its
-open-source edition, KWDB. It executes read-only SQL against the KWDB
-time-series engine through the PostgreSQL wire protocol and renders results as
-Grafana time series or table data.
+This plugin connects [Grafana](https://grafana.com) to KWDB. It executes
+read-only SQL against the KWDB time-series engine through the PostgreSQL wire
+protocol and renders results as Grafana time series or table data.
 
-> 本插件适用于 KaiwuDB 及其开源版本 KWDB，可以在 Grafana 中查询、展示和分析
-> KWDB 时序数据。
+> 本插件适用于 KWDB，可以在 Grafana 中查询、展示和分析 KWDB 时序数据。
 
-![example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/example.png)
+![example](https://github.com/KWDB/kwdb-grafana-plugin/raw/main/src/img/example.png)
 
 ## Features
 
@@ -35,13 +33,13 @@ Grafana time series or table data.
 ## Requirements
 
 - Grafana 13.1 or newer
-- KWDB or KaiwuDB with a PostgreSQL-compatible endpoint (default port `26257`)
+- KWDB with a PostgreSQL-compatible endpoint (default port `26257`)
 - A database account with read access; prefer a dedicated read-only account
 
 | Component        | Requirement                                               |
 | ---------------- | --------------------------------------------------------- |
 | Grafana          | 13.1 or newer (built and tested against 13.1.0)           |
-| KWDB / KaiwuDB   | PostgreSQL-compatible endpoint, default port `26257`      |
+| KWDB             | PostgreSQL-compatible endpoint, default port `26257`      |
 | Database account | Read access; a dedicated read-only account is recommended |
 
 ## Installation
@@ -100,7 +98,7 @@ KWDB_HOST=db.example.com KWDB_PORT=26257 KWDB_DATABASE=example_db \
 4. Fill in the connection settings.
 5. Click **Save & test**.
 
-![KWDB Datasource](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/kwdb-datasource.png)
+![KWDB Datasource](https://github.com/KWDB/kwdb-grafana-plugin/raw/main/src/img/kwdb-datasource.png)
 
 | Field           | Description                                                                                                               |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -127,7 +125,7 @@ as `sslrootcert`.
 Click **Save & test** to verify connectivity. The backend executes `SELECT 1`
 and reports whether the data source is working.
 
-![test-datasource](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/save-test.png)
+![test-datasource](https://github.com/KWDB/kwdb-grafana-plugin/raw/main/src/img/save-test.png)
 
 ## Build a dashboard
 
@@ -159,7 +157,7 @@ more metrics.
 
 Aggregations: `avg`, `sum`, `count`, `min`, `max`, `stddev`, `none`.
 
-![downsampling example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/downsampling-example.png)
+![downsampling example](https://github.com/KWDB/kwdb-grafana-plugin/raw/main/src/img/downsampling-example.png)
 
 ### Gapfill
 

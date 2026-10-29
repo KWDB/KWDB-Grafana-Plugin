@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/kaiwudb/kwdb-tsdb-datasource/pkg/models"
+	"github.com/KWDB/kwdb-grafana-plugin/pkg/models"
 )
 
 // TestIsReadOnlyRejectsLexicalBypasses covers the escape sequences that made the

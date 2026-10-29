@@ -19,7 +19,7 @@ Advisories:
 2. Select **Report a vulnerability**.
 3. Provide the details in the private advisory form.
 
-Direct link: <https://github.com/LumingSun/KWDB-Grafana-Plugin/security/advisories/new>
+Direct link: <https://github.com/KWDB/kwdb-grafana-plugin/security/advisories/new>
 
 Do **not** open a public issue, discussion, or pull request for a suspected
 vulnerability, and do not disclose it publicly before a fix and disclosure plan

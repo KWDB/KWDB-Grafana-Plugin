@@ -42,10 +42,6 @@ services:
       GF_FEATURE_TOGGLES_dashboardNewLayouts: 'false'
       # 允许被 iframe 嵌入（仪表板外部图表功能需要）
       GF_SECURITY_ALLOW_EMBEDDING: 'true'
-      # .config/docker-compose-base.yaml 仍是脚手架时期的旧名字；在 .config
-      # 重新生成前，这里覆盖 unsigned allowlist 和日志过滤器，保证新 ID 能加载。
-      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: 'kwdb-datasource'
-      GF_LOG_FILTERS: 'plugin.kwdb-datasource:debug'
 
 volumes:
   kwdb-data:

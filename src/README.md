@@ -1,10 +1,10 @@
-# KaiwuDB / KWDB Grafana data source plugin
+# KWDB Grafana data source plugin
 
-This plugin connects [Grafana](https://grafana.com) to KaiwuDB and its open-source edition, KWDB. It executes read-only SQL against the KWDB time-series engine through the PostgreSQL wire protocol and renders results as Grafana time series or table data.
+This plugin connects [Grafana](https://grafana.com) to KWDB. It executes read-only SQL against the KWDB time-series engine through the PostgreSQL wire protocol and renders results as Grafana time series or table data.
 
-> 本插件适用于 KaiwuDB 及其开源版本 KWDB，可以在 Grafana 中查询、展示和分析 KWDB 时序数据。
+> 本插件适用于 KWDB，可以在 Grafana 中查询、展示和分析 KWDB 时序数据。
 
-![KWDB dashboard example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/example.png)
+![KWDB dashboard example](https://github.com/KWDB/kwdb-grafana-plugin/raw/main/src/img/example.png)
 
 ## Features
 
@@ -27,7 +27,7 @@ This plugin connects [Grafana](https://grafana.com) to KaiwuDB and its open-sour
 ## Requirements
 
 - Grafana 13.1 or newer (built and tested against 13.1.0)
-- KWDB or KaiwuDB with a PostgreSQL-compatible endpoint (default port `26257`)
+- KWDB with a PostgreSQL-compatible endpoint (default port `26257`)
 - A database account with read access; a dedicated read-only account is recommended
 
 ## Installation
@@ -52,11 +52,11 @@ This plugin connects [Grafana](https://grafana.com) to KaiwuDB and its open-sour
 | Max connections | Connection pool size (default `8`).                                                                                       |
 | Connect timeout | Connection timeout in seconds (default `5`).                                                                              |
 
-![Data source settings](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/kwdb-datasource.png)
+![Data source settings](https://github.com/KWDB/kwdb-grafana-plugin/raw/main/src/img/kwdb-datasource.png)
 
 Click **Save & test** to verify connectivity. The backend executes `SELECT 1` and reports whether the data source is working.
 
-![Save and test](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/save-test.png)
+![Save and test](https://github.com/KWDB/kwdb-grafana-plugin/raw/main/src/img/save-test.png)
 
 ## Query editor
 
@@ -74,7 +74,7 @@ Each visual mode generates SQL automatically and shows a read-only SQL preview.
 
 Select a table, time column, interval, tag columns for `GROUP BY`, and one or more metrics. Aggregations: `avg`, `sum`, `count`, `min`, `max`, `stddev`, `none`.
 
-![Downsampling example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/downsampling-example.png)
+![Downsampling example](https://github.com/KWDB/kwdb-grafana-plugin/raw/main/src/img/downsampling-example.png)
 
 ### Gapfill
 
@@ -137,16 +137,16 @@ Read-only access is enforced in three layers:
 
 ## Development and publishing
 
-- See [DEVELOPMENT.md](https://github.com/LumingSun/KWDB-Grafana-Plugin/blob/main/DEVELOPMENT.md) for local development, testing, and packaging instructions.
+- See [DEVELOPMENT.md](https://github.com/KWDB/kwdb-grafana-plugin/blob/main/DEVELOPMENT.md) for local development, testing, and packaging instructions.
 - Plugin ID: `kwdb-datasource`; it must match the Grafana Cloud organization slug `kwdb`.
 - First submissions do not require a signature. After review, versions are signed and released through the `Release` GitHub Actions workflow.
 - Full instructions are in the [Grafana plugin publishing guide](https://grafana.com/developers/plugin-tools/publish-a-plugin).
 
 ## Support
 
-- Report bugs and request features: [GitHub issues](https://github.com/LumingSun/KWDB-Grafana-Plugin/issues)
-- KaiwuDB: <https://www.kaiwudb.com>
+- Report bugs and request features: [GitHub issues](https://github.com/KWDB/kwdb-grafana-plugin/issues)
+- KWDB: <https://www.kaiwudb.com/community>
 
 ## License
 
-Apache License 2.0. See [LICENSE](https://github.com/LumingSun/KWDB-Grafana-Plugin/blob/main/LICENSE).
+Apache License 2.0. See [LICENSE](https://github.com/KWDB/kwdb-grafana-plugin/blob/main/LICENSE).
