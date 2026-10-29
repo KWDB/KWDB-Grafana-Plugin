@@ -4,7 +4,7 @@ This plugin connects [Grafana](https://grafana.com) to KaiwuDB and its open-sour
 
 > 本插件适用于 KaiwuDB 及其开源版本 KWDB，可以在 Grafana 中查询、展示和分析 KWDB 时序数据。
 
-![KWDB dashboard example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/example.png)
+![KWDB dashboard example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/example.png)
 
 ## Features
 
@@ -52,11 +52,11 @@ This plugin connects [Grafana](https://grafana.com) to KaiwuDB and its open-sour
 | Max connections | Connection pool size (default `8`).                                                                                       |
 | Connect timeout | Connection timeout in seconds (default `5`).                                                                              |
 
-![Data source settings](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/kwdb-datasource.png)
+![Data source settings](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/kwdb-datasource.png)
 
 Click **Save & test** to verify connectivity. The backend executes `SELECT 1` and reports whether the data source is working.
 
-![Save and test](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/save-test.png)
+![Save and test](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/save-test.png)
 
 ## Query editor
 
@@ -74,7 +74,7 @@ Each visual mode generates SQL automatically and shows a read-only SQL preview.
 
 Select a table, time column, interval, tag columns for `GROUP BY`, and one or more metrics. Aggregations: `avg`, `sum`, `count`, `min`, `max`, `stddev`, `none`.
 
-![Downsampling example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/downsampling-example.png)
+![Downsampling example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/downsampling-example.png)
 
 ### Gapfill
 
@@ -137,7 +137,7 @@ Read-only access is enforced in three layers:
 
 ## Development and publishing
 
-- See [DEVELOPMENT.md](https://github.com/LumingSun/KWDB-Grafana-Plugin/blob/master/DEVELOPMENT.md) for local development, testing, and packaging instructions.
+- See [DEVELOPMENT.md](https://github.com/LumingSun/KWDB-Grafana-Plugin/blob/main/DEVELOPMENT.md) for local development, testing, and packaging instructions.
 - Plugin ID: `kwdb-datasource`; it must match the Grafana Cloud organization slug `kwdb`.
 - First submissions do not require a signature. After review, versions are signed and released through the `Release` GitHub Actions workflow.
 - Full instructions are in the [Grafana plugin publishing guide](https://grafana.com/developers/plugin-tools/publish-a-plugin).
@@ -149,4 +149,4 @@ Read-only access is enforced in three layers:
 
 ## License
 
-Apache License 2.0. See [LICENSE](https://github.com/LumingSun/KWDB-Grafana-Plugin/blob/master/LICENSE).
+Apache License 2.0. See [LICENSE](https://github.com/LumingSun/KWDB-Grafana-Plugin/blob/main/LICENSE).
