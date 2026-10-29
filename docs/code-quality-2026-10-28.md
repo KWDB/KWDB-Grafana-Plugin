@@ -39,10 +39,10 @@
 | 10  | `src/variableQuery.ts`                            | 结构化输入只校验 `columns`/`tagValues`，其他 queryType 原样放行；且返回的是**入参对象引用**，调用方改动会污染解析结果                                                                                                                                                                                              | 穷举校验 + 返回拷贝                                                                                                                                         |
 | 11  | `src/variableQuery.ts`                            | 正则过松，`columns(a)(b)` 会被当成表名 `a)(b` 接受                                                                                                                                                                                                                                                                 | 参数中拒绝括号                                                                                                                                              |
 | 12  | `src/README.md` / `README.md`                     | 文档写"Table: long format"，但 `KwdbQueryFormat` 只有 `time_series \| table`，没有 `long`                                                                                                                                                                                                                          | 改掉表述                                                                                                                                                    |
-| 13  | `src/sqlBuilder.ts` `windowTimeExpr`              | **COUNT_WINDOW 的行数没有默认值，而编辑器"Row limit"字段显示 `100`**。刚切到 COUNT_WINDOW 时模型里 `windowInterval` 是 `undefined`，生成的 SQL 是空字符串——用户看着字段里写着 100，SQL 预览却是空的。而且因为是 React 受控组件，把字段设成它已经显示的值不会触发 `onChange`，用户想靠输入"100"把预览弄出来也做不到 | 生成侧默认 `100`，与编辑器一致。这一条是 e2e 真机跑出来的                                                                                                   |
+| 13  | `src/sqlBuilder.ts` `windowTimeExpr`              | **COUNT_WINDOW 的行数没有默认值，而编辑器"Row limit"字段显示 `100`**。刚切到 COUNT_WINDOW 时模型里 `windowInterval` 是 `undefined`，生成的 SQL 是空字符串——用户看着字段里写着 100，SQL 预览却是空的。而且因为是 React 受控组件，把字段设成它已经显示的值不会触发 `onChange`，用户想靠输入"100"把预览弄出来也做不到 | 生成侧默认 `100`，与编辑器一致。这一条是 e2e 跑出来的（在 Grafana 容器 + KWDB 容器环境）                                                                    |
 | 14  | `tests/queryChanges.test.ts`（新增）              | `tableChangePatch` / `windowTypeChangePatch` 这两个切换表/窗口类型时重置字段的纯逻辑模块没有测试，而它们的语义（`windowInterval` 在 TIME_WINDOW 是时长、在 COUNT_WINDOW 是行数，所以切换时必须清掉）很容易被后来人改错                                                                                             | 补 8 个用例                                                                                                                                                 |
 
-> 第 13 条说明一件事：**e2e 真机跑一遍能发现单测发现不了的问题**。受控输入框"显示值和模型值不一致"这类问题，单元测试只会按给定的模型算 SQL，永远不会撞上。
+> 第 13 条说明一件事：**e2e 跑一遍能发现单测发现不了的问题**。受控输入框"显示值和模型值不一致"这类问题，单元测试只会按给定的模型算 SQL，永远不会撞上。
 
 ### 3. 变量支持 API 已废弃（已修）
 
@@ -83,19 +83,29 @@
 
 ## 二、还需要人工决策或真实环境验证的
 
-### 1. 窗口表达式没有进 SELECT 列表（需要真实库验证）
+> **先说清楚这一轮到底连过什么库。** 本次改动（2026-10-28）的验证全部是：单元测试（不连库）、静态检查、构建、plugin-validator，以及 CI 上的 e2e——CI 用 `docker-compose` 自己拉 `kwdb/kwdb` 容器、以 `scripts/init.sql` 建 `demo_ts.sensors`，21 个用例在 4 个 Grafana 版本上通过。**那是容器里的演示数据。**
+>
+> 本地这次也起过 Grafana，但工作区到 KWDB 的 26257/26267 都不通，数据相关用例全部 skip，没有真跑。
+>
+> 真正的真实库实测在 `docs/quality-review-2026-10-22.md`：Grafana 13.1.0 + KWDB `10.110.105.80:26267/factory`、`equipment_telemetry` 468 万行。下面标"已在真实库上复现并修复"的条目，依据的是那份记录，不是本轮。
+
+### 1. 窗口表达式没有进 SELECT 列表（设计问题，非正确性风险）
 
 `buildWindowSql` 把窗口表达式只放在 `GROUP BY`，SELECT 里只有 `first(time) AS "time"`、tag 列和指标列。结果是**结果集里没有任何一列能标识每行属于哪个 window/session/event/state**。KWDB 自己的参考示例都会把窗口表达式 select 出来（例如 `TIME_WINDOW(ts,'1h') AS window`）。
 
-要改的话就是往 SELECT 里加一列别名后的窗口表达式，但这会改变所有窗口查询的输出结构，也会影响 `frame.go` 的列识别，**必须先在真实 KWDB 上验证**再动。
+注意这条**不是"改之前必须实测"**：`docs/quality-review-2026-10-22.md` 的真实 KWDB 矩阵里，`TIME_WINDOW`/`SESSION_WINDOW`/`COUNT_WINDOW`/`EVENT_WINDOW`/`STATE_WINDOW` 五种都执行成功了，说明现在的 SQL 是真能跑的。要改是为了可用性（让用户看出每行属于哪个窗口），代价是改变所有窗口查询的输出结构并影响 `frame.go` 的列识别。属于产品决策，不是阻塞项。
 
-### 2. `last_row` / `first_row` 的语义不一致（需要真实库验证）
+### 2. `last_row` / `first_row` 的语义不一致 —— 已在真实库上复现并修复
 
-`latestTimeExpr` 在 `latestFunc` 为 `last_row`/`first_row` 时仍然对时间列用 `last()`/`first()`（排除 NULL），而指标列用 `last_row()`/`first_row()`（包含 NULL）。如果时间列可能为 NULL，返回的 `"time"` 和指标值可能不是同一行。KWDB 有 `last_row_ts()`/`first_row_ts()` 可以写成一致的形式，但需要确认目标版本是否支持。
+`latestTimeExpr` 曾经在 `latestFunc` 为 `last_row`/`first_row` 时仍然对时间列用 `last()`/`first()`（排除 NULL），而指标列用 `last_row()`/`first_row()`（包含 NULL），导致值与时间错位。这一条**在 2026-10-22 已经于 `10.110.105.80:26267/factory` 的 `equipment_telemetry`（468 万行）上真机复现**（评审报告 F2），当前代码已改为跟随 `latestFunc` 映射，并有单测固定。
 
-### 3. `interpolate` 常量模式的写法（需要真实库验证）
+仍未验证的只剩：时间列本身可能为 NULL 时 `last()` 与 `last_row()` 的取值差异，以及 `last_row_ts()`/`first_row_ts()` 在目标版本是否可用。这需要一台时间列可空的表才能触发，不是常见场景。
 
-现在生成 `interpolate(avg(v), 0)`（裸数字），KWDB 参考示例里是 `interpolate(avg(value), '0')`（带引号）。两种写法是否等价需要实测。另外 `normalizeInterpolateConstant` 把 NaN/Infinity 一律静默变成 0，UI 填错了不报错而是默默补 0。
+### 3. `interpolate` 常量模式 —— 已在真实库上复现并修复
+
+曾经生成 `interpolate(avg(v), 'constant')`，**在 2026-10-22 的真机实测中返回 400**（评审报告 A1/F1：`'constant'` 不在 KWDB 插值白名单）。当前代码已改为输出数值常量 `interpolate(avg(v), 0)`，`tests/sqlBuilder.test.ts` 有"renders the constant mode as a numeric literal"固定该行为。
+
+遗留的小问题：`normalizeInterpolateConstant` 把 NaN/Infinity 一律静默变成 0，UI 填错了不报错而是默默补 0。
 
 ### 4. 模板变量不支持级联（功能缺口，非缺陷）
 
@@ -118,15 +128,15 @@
 
 ### 7. TLS 的真实链路没实测过
 
-`verify-ca` / `verify-full` 需要一台开了 TLS 的 KWDB 才能验证，目前手上没有这样的实例。逻辑上 `sslrootcert` 已经透传，但没有端到端证据。
+`verify-ca` / `verify-full` 需要一台开了 TLS 的 KWDB 才能验证，2026-10-22 的评审也把这条列在未验证范围里。逻辑上 `sslrootcert` 已经透传、`sslMode` 白名单已收紧，但没有端到端证据。这是发布前唯一还完全空白的链路，建议上线前找一台开 TLS 的实例补一次。
 
 ### 8. 告警/注解的测试覆盖
 
-`plugin.json` 声明了 `alerting: true` 和 `annotations: true`，后端确实复用同一条查询链路。本次补了 3 个 e2e spec（见下），但告警规则本身（创建规则 → 触发 → 收到通知）仍没有覆盖。提交审核时这几乎一定被问到，建议至少补一个告警规则的端到端用例。
+`plugin.json` 声明了 `alerting: true` 和 `annotations: true`，后端确实复用同一条查询链路。本次补了 3 个 e2e spec，在 CI 的容器环境（4 个 Grafana 版本）上通过；2026-10-22 的评审则把 annotations/alerting 的实际路径列为未验证。**告警规则本身（创建规则 → 触发 → 收到通知）至今没有任何覆盖**，提交审核时几乎一定被问到。
 
-### 9. e2e 真机跑出来的三个新发现
+### 9. e2e 跑出来的三个新发现
 
-e2e 是在 **Grafana 13.1.0 容器 + 真实 KWDB 实例**上跑的（新 spec 13 passed，全套回归 21 passed / 0 failed；默认配置缺表示例表时 12 skipped，确认 skip 逻辑生效而不是静默通过）。这一轮真机验证带回来三件事：
+e2e 是在 **Grafana 容器 + KWDB 容器**（`docker-compose` 起的 `kwdb/kwdb`，数据来自 `scripts/init.sql` 的 `demo_ts.sensors`）上跑的。子代理报告它当时拿到过 13 passed / 21 passed，但**没有记录连的是哪台 KWDB**；CI 上的 21 passed 可以确认是容器库。这三件事都是在有真实 KWDB 引擎参与的条件下发现的，但**不是在 80 服务器上**：
 
 1. **窗口查询在长时间范围上会撑爆 KWDB 的内存预算。** `TIME_WINDOW(ts, '1h', '15m')` 跑 30 天直接报 `group-window-func: memory budget exceeded`，滑动窗口和 `COUNT_WINDOW` 最严重。这是数据库侧限制，不是插件的问题，但用户一定会撞上，所以两个 README 的 Troubleshooting 里都加了说明（缩窄时间范围，或者去掉 slide 让窗口边界和范围对齐）。e2e 的窗口用例因此用短的配置化时间范围。
 2. **注解查询必须用 Table 格式。** Grafana 从 `time` 列加一个文本列推导注解事件，构建器查询默认给的是 `time_series` 格式，会报 `could not convert frame to time series`。后端已有的错误信息写得很清楚（"select Table format for non-time results"），README 也补了说明。没有改成自动降级——静默换格式会掩盖真正的配置错误，明确报错更好。
@@ -175,18 +185,20 @@ e2e 是在 **Grafana 13.1.0 容器 + 真实 KWDB 实例**上跑的（新 spec 13
 
 ## 四、验证结果
 
-| 项                         | 结果                                                        |
-| -------------------------- | ----------------------------------------------------------- |
-| `tsc --noEmit`             | 通过                                                        |
-| `eslint .`                 | 0 error，25 warning（均为 UI 组件 deprecation，见第二节 5） |
-| `jest`                     | 7 suites / 148 tests 全通过                                 |
-| `go test ./pkg/...`        | 通过                                                        |
-| `go vet ./pkg/...`         | 通过                                                        |
-| `gofmt -l pkg/`            | 干净                                                        |
-| `webpack --env production` | 通过                                                        |
-| `mage buildAll`            | 6 个平台二进制通过                                          |
-| 全量 plugin-validator      | 仅 `unsigned plugin` 一条 warning（未发布插件的预期结果）   |
-| e2e（真机）                | 新 spec 13 passed；全套回归 21 passed / 0 failed            |
+| 项                         | 结果                                                                                                        |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `tsc --noEmit`             | 通过                                                                                                        |
+| `eslint .`                 | 0 error，25 warning（均为 UI 组件 deprecation，见第二节 5）                                                 |
+| `jest`                     | 7 suites / 148 tests 全通过                                                                                 |
+| `go test ./pkg/...`        | 通过                                                                                                        |
+| `go vet ./pkg/...`         | 通过                                                                                                        |
+| `gofmt -l pkg/`            | 干净                                                                                                        |
+| `webpack --env production` | 通过                                                                                                        |
+| `mage buildAll`            | 6 个平台二进制通过                                                                                          |
+| 全量 plugin-validator      | 仅 `unsigned plugin` 一条 warning（未发布插件的预期结果）                                                   |
+| e2e（CI 容器库）           | 新 spec 13 passed；全套回归 21 passed / 0 failed                                                            |
+| e2e（本机）                | 数据相关用例全部 skip——工作区到 KWDB 26257/26267 均不通                                                     |
+| 真实 KWDB（80 服务器）     | **本轮未执行**。真实库实测见 `docs/quality-review-2026-10-22.md`（`10.110.105.80:26267/factory`，468 万行） |
 
 > **CI 全量 validator 第一次实跑就抓到两个真问题**，这正是把它接进 CI 的理由：
 > ① 改了 Go 文件没有重新 `mage buildAll`，`go_plugin_build_manifest` 里的 sha256 对不上，`go-manifest` analyzer 直接报错，LLM review 和 code diff 都被跳过；

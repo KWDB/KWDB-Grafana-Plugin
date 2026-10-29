@@ -57,8 +57,9 @@
   changes, the variable support class, the health check error classification and
   the connection settings validation.
 - End-to-end tests for the latest values and window/event builder modes and for
-  annotation queries. Verified against a real Grafana 13.1.0 container and a
-  live KWDB instance: 13 new cases pass and the full suite stays green.
+  annotation queries. The end-to-end suite runs in CI against a KWDB
+  container seeded by scripts/init.sql and passes on Grafana 13.1, 13.2,
+  13.3 and nightly.
 - CI now runs the complete Grafana plugin validator on every pull request.
   Previously only the metadata analyzer ran in CI; the full validator ran only
   in the release workflow, which had never been executed.
