@@ -1,3 +1,4 @@
+import type { KwdbInterpolateMode, KwdbQuery, MetricSpec } from '../src/types';
 import {
   buildDownsamplingSql,
   buildGapfillSql,
@@ -5,319 +6,721 @@ import {
   buildRawSql,
   buildSql,
   buildWindowSql,
+  normalizeInterpolateMode,
 } from '../src/sqlBuilder';
-import type { KwdbQuery } from '../src/types';
 
-const base: KwdbQuery = { refId: 'A', mode: 'downsampling', format: 'time_series' };
+const TIME_MACROS = 'WHERE "ts" >= $__timeFrom AND "ts" <= $__timeTo';
 
-describe('sqlBuilder', () => {
-  it('builds downsampling SQL with a qualified table, tags and one metric', () => {
-    const query: KwdbQuery = {
-      ...base,
-      table: 'ts_db.sensor_data',
-      timeColumn: 'ts',
-      interval: '5m',
-      tags: ['device_id'],
-      metrics: [{ column: 'temperature', aggregation: 'avg' }],
-    };
+function metric(overrides: Partial<MetricSpec> = {}): MetricSpec {
+  return { column: 'temperature', aggregation: 'avg', ...overrides };
+}
 
-    expect(buildSql(query)).toBe(
-      [
-        'SELECT time_bucket("ts", \'5m\') AS "time",',
-        '       "device_id",',
-        '       avg("temperature") AS "avg_temperature"',
-        'FROM "ts_db"."sensor_data"',
-        'WHERE "ts" >= $__timeFrom AND "ts" <= $__timeTo',
-        'GROUP BY "time", "device_id"',
-        'ORDER BY "time", "device_id"',
-      ].join('\n')
-    );
+function query(overrides: Partial<KwdbQuery> = {}): KwdbQuery {
+  return {
+    refId: 'A',
+    mode: 'downsampling',
+    format: 'time_series',
+    table: 'sensors',
+    timeColumn: 'ts',
+    interval: '5m',
+    metrics: [metric()],
+    ...overrides,
+  };
+}
+
+describe('normalizeInterpolateMode', () => {
+  it('keeps the canonical lowercase modes', () => {
+    for (const mode of ['linear', 'prev', 'next', 'null', 'constant'] as const) {
+      expect(normalizeInterpolateMode(mode)).toBe(mode);
+    }
   });
 
-  it('uses the default 5m interval and handles multiple metrics, custom alias and none aggregation', () => {
-    const query: KwdbQuery = {
-      ...base,
-      table: 'sensors',
-      timeColumn: 'k_timestamp',
-      tags: [],
-      metrics: [
-        { column: 'humidity', aggregation: 'none' },
-        { column: 'temperature', aggregation: 'max', alias: 'peak' },
-      ],
-    };
+  it('normalizes uppercase legacy values such as PREV / NEXT / NULL', () => {
+    expect(normalizeInterpolateMode('PREV')).toBe('prev');
+    expect(normalizeInterpolateMode('NEXT')).toBe('next');
+    expect(normalizeInterpolateMode('NULL')).toBe('null');
+    expect(normalizeInterpolateMode('LINEAR')).toBe('linear');
+    expect(normalizeInterpolateMode('CONSTANT')).toBe('constant');
+  });
 
-    expect(buildDownsamplingSql(query)).toBe(
+  it('trims surrounding whitespace before comparing', () => {
+    expect(normalizeInterpolateMode('  prev  ')).toBe('prev');
+    expect(normalizeInterpolateMode('\tlinear\n')).toBe('linear');
+  });
+
+  it('falls back to linear for missing, blank or unknown modes', () => {
+    expect(normalizeInterpolateMode()).toBe('linear');
+    expect(normalizeInterpolateMode('')).toBe('linear');
+    expect(normalizeInterpolateMode('   ')).toBe('linear');
+    expect(normalizeInterpolateMode('quadratic')).toBe('linear');
+  });
+});
+
+describe('buildDownsamplingSql', () => {
+  it('builds the canonical downsampling statement', () => {
+    const sql = buildDownsamplingSql(query({ tags: ['device_id'] }));
+    expect(sql).toBe(
       [
-        'SELECT time_bucket("k_timestamp", \'5m\') AS "time",',
-        '       "humidity",',
-        '       max("temperature") AS "peak"',
+        `SELECT time_bucket("ts", '5m') AS "time",`,
+        `       "device_id",`,
+        `       avg("temperature") AS "avg_temperature"`,
         'FROM "sensors"',
-        'WHERE "k_timestamp" >= $__timeFrom AND "k_timestamp" <= $__timeTo',
-        'GROUP BY "time"',
-        'ORDER BY "time"',
-      ].join('\n')
-    );
-  });
-
-  it('quotes identifiers containing double quotes', () => {
-    const query: KwdbQuery = {
-      ...base,
-      table: 'odd"table',
-      timeColumn: 'we"ird',
-      tags: ['tag"x'],
-      metrics: [{ column: 'val"ue', aggregation: 'sum' }],
-    };
-
-    expect(buildDownsamplingSql(query)).toContain('FROM "odd""table"');
-    expect(buildDownsamplingSql(query)).toContain('"we""ird"');
-    expect(buildDownsamplingSql(query)).toContain('"tag""x"');
-    expect(buildDownsamplingSql(query)).toContain('sum("val""ue")');
-  });
-
-  it('builds gapfill SQL with linear interpolation by default', () => {
-    const query: KwdbQuery = {
-      ...base,
-      mode: 'gapfill',
-      table: 'ts_db.sensor_data',
-      timeColumn: 'ts',
-      interval: '5m',
-      tags: ['device_id'],
-      metrics: [{ column: 'temperature', aggregation: 'avg' }],
-    };
-
-    expect(buildGapfillSql(query)).toBe(
-      [
-        'SELECT time_bucket_gapfill("ts", \'5m\') AS "time",',
-        '       "device_id",',
-        '       interpolate(avg("temperature"), \'linear\') AS "avg_temperature"',
-        'FROM "ts_db"."sensor_data"',
-        'WHERE "ts" >= $__timeFrom AND "ts" <= $__timeTo',
+        TIME_MACROS,
         'GROUP BY "time", "device_id"',
         'ORDER BY "time", "device_id"',
       ].join('\n')
     );
   });
 
-  it.each([
-    ['prev', "'prev'"],
-    ['next', "'next'"],
-    ['null', "'null'"],
-  ] as const)('builds gapfill SQL with %s interpolation as a quoted lowercase literal', (mode, literal) => {
-    const query: KwdbQuery = {
-      ...base,
-      mode: 'gapfill',
-      table: 'sensors',
-      timeColumn: 'ts',
-      interval: '15m',
-      interpolateMode: mode,
-      metrics: [{ column: 'pressure', aggregation: 'avg' }],
-    };
-
-    expect(buildGapfillSql(query)).toContain(`interpolate(avg("pressure"), ${literal}) AS "avg_pressure"`);
+  it('uses time_bucket and injects the Grafana time macros', () => {
+    const sql = buildDownsamplingSql(query());
+    expect(sql).toContain(`SELECT time_bucket("ts", '5m') AS "time"`);
+    expect(sql).toContain(TIME_MACROS);
+    expect(sql).not.toContain('time_bucket_gapfill');
   });
 
-  it.each([
-    ['PREV', "'prev'"],
-    ['NEXT', "'next'"],
-    ['NULL', "'null'"],
-  ] as const)('normalizes legacy %s interpolation saved by older dashboards', (legacyMode, literal) => {
-    const query = {
-      ...base,
-      mode: 'gapfill',
-      table: 'sensors',
-      timeColumn: 'ts',
-      interval: '15m',
-      interpolateMode: legacyMode,
-      metrics: [{ column: 'pressure', aggregation: 'avg' }],
-    } as unknown as KwdbQuery;
-
-    expect(buildGapfillSql(query)).toContain(`interpolate(avg("pressure"), ${literal}) AS "avg_pressure"`);
+  it('defaults the interval to 5m when it is missing, empty or blank', () => {
+    expect(buildDownsamplingSql(query({ interval: undefined }))).toContain(`time_bucket("ts", '5m')`);
+    expect(buildDownsamplingSql(query({ interval: '' }))).toContain(`time_bucket("ts", '5m')`);
+    expect(buildDownsamplingSql(query({ interval: '   ' }))).toContain(`time_bucket("ts", '5m')`);
   });
 
-  it('builds gapfill SQL with constant interpolation and the configured numeric value', () => {
-    const query: KwdbQuery = {
-      ...base,
-      mode: 'gapfill',
-      table: 'sensors',
-      timeColumn: 'ts',
-      interval: '15m',
-      interpolateMode: 'constant',
-      interpolateConstant: 42,
-      metrics: [{ column: 'pressure', aggregation: 'avg' }],
-    };
-
-    expect(buildGapfillSql(query)).toContain('interpolate(avg("pressure"), 42) AS "avg_pressure"');
+  it('honours a custom interval', () => {
+    expect(buildDownsamplingSql(query({ interval: '15m' }))).toContain(`time_bucket("ts", '15m')`);
+    expect(buildDownsamplingSql(query({ interval: '90s' }))).toContain(`time_bucket("ts", '90s')`);
   });
 
-  it('falls back to 0 for constant interpolation without a finite value', () => {
-    const query: KwdbQuery = {
-      ...base,
-      mode: 'gapfill',
-      table: 'sensors',
-      timeColumn: 'ts',
-      metrics: [{ column: 'pressure', aggregation: 'avg' }],
-      interpolateMode: 'constant',
-    };
+  it('emits one aliased expression per metric using generated aliases', () => {
+    const sql = buildDownsamplingSql(
+      query({
+        metrics: [
+          { column: 'temperature', aggregation: 'avg' },
+          { column: 'humidity', aggregation: 'sum' },
+          { column: 'events', aggregation: 'count' },
+          { column: 'voltage', aggregation: 'min' },
+        ],
+      })
+    );
+    expect(sql).toContain(`avg("temperature") AS "avg_temperature"`);
+    expect(sql).toContain(`sum("humidity") AS "sum_humidity"`);
+    expect(sql).toContain(`count("events") AS "count_events"`);
+    expect(sql).toContain(`min("voltage") AS "min_voltage"`);
+  });
 
-    expect(buildGapfillSql(query)).toContain('interpolate(avg("pressure"), 0) AS "avg_pressure"');
-    expect(buildGapfillSql({ ...query, interpolateConstant: Number.NaN })).toContain(
-      'interpolate(avg("pressure"), 0) AS "avg_pressure"'
+  // KWDB rejects a bare column in a grouped SELECT ("column must appear in the
+  // GROUP BY clause"), so the column is added to GROUP BY instead of dropped.
+  it('adds a bare column to GROUP BY when aggregation is none and no alias is set', () => {
+    const sql = buildDownsamplingSql(query({ metrics: [{ column: 'voltage', aggregation: 'none' }] }));
+    expect(sql).toContain(`       "voltage"`);
+    expect(sql).not.toContain(`none("voltage")`);
+    expect(sql).not.toContain('"voltage" AS');
+    expect(sql).toContain('GROUP BY "time", "voltage"');
+    expect(sql).toContain('ORDER BY "time", "voltage"');
+  });
+
+  it('aliases a none-aggregated column and still groups by it', () => {
+    const sql = buildDownsamplingSql(query({ metrics: [{ column: 'voltage', aggregation: 'none', alias: 'volts' }] }));
+    expect(sql).toContain(`"voltage" AS "volts"`);
+    expect(sql).toContain('GROUP BY "time", "voltage"');
+  });
+
+  it('does not duplicate a repeated bare column in GROUP BY', () => {
+    const sql = buildDownsamplingSql(
+      query({
+        metrics: [
+          { column: 'voltage', aggregation: 'none' },
+          { column: 'voltage', aggregation: 'none' },
+        ],
+      })
+    );
+    expect(sql).toContain('GROUP BY "time", "voltage"');
+    expect(sql).not.toContain('GROUP BY "time", "voltage", "voltage"');
+  });
+
+  it('keeps grouped columns after the tags', () => {
+    const sql = buildDownsamplingSql(
+      query({ tags: ['device_id'], metrics: [{ column: 'voltage', aggregation: 'none' }] })
+    );
+    expect(sql).toContain('GROUP BY "time", "device_id", "voltage"');
+  });
+
+  it('prefers an explicit alias over the generated one', () => {
+    const sql = buildDownsamplingSql(query({ metrics: [metric({ alias: 'mean_temp' })] }));
+    expect(sql).toContain(`avg("temperature") AS "mean_temp"`);
+    expect(sql).not.toContain('avg_temperature');
+  });
+
+  it('ignores whitespace-only aliases', () => {
+    const sql = buildDownsamplingSql(query({ metrics: [metric({ alias: '   ' })] }));
+    expect(sql).toContain(`avg("temperature") AS "avg_temperature"`);
+  });
+
+  it('groups and orders by every tag column', () => {
+    const sql = buildDownsamplingSql(query({ tags: ['device_id', 'location'] }));
+    expect(sql).toContain('GROUP BY "time", "device_id", "location"');
+    expect(sql).toContain('ORDER BY "time", "device_id", "location"');
+    const selectBlock = sql.split('FROM')[0];
+    expect(selectBlock).toContain(`       "device_id",`);
+    expect(selectBlock).toContain(`       "location"`);
+  });
+
+  it('drops blank tag entries', () => {
+    const sql = buildDownsamplingSql(query({ tags: ['device_id', '   ', ''] }));
+    expect(sql).toContain('GROUP BY "time", "device_id"');
+    expect(sql).toContain('ORDER BY "time", "device_id"');
+    expect(sql).not.toContain('""');
+  });
+
+  it('omits tags from GROUP BY / ORDER BY when none are configured', () => {
+    const sql = buildDownsamplingSql(query({ tags: [] }));
+    expect(sql).toContain('GROUP BY "time"');
+    expect(sql).toContain('ORDER BY "time"');
+  });
+
+  it('escapes double quotes inside identifiers', () => {
+    const sql = buildDownsamplingSql(
+      query({
+        table: 'sen"sors',
+        timeColumn: 't"s',
+        tags: ['de"vice'],
+        metrics: [{ column: 'tem"p', aggregation: 'avg', alias: 'a"lias' }],
+      })
+    );
+    expect(sql).toContain('FROM "sen""sors"');
+    expect(sql).toContain(`"t""s" >= $__timeFrom`);
+    expect(sql).toContain(`time_bucket("t""s", '5m')`);
+    expect(sql).toContain(`       "de""vice"`);
+    expect(sql).toContain(`avg("tem""p") AS "a""lias"`);
+  });
+
+  it('quotes every part of a schema-qualified table name', () => {
+    const sql = buildDownsamplingSql(query({ table: 'iot.sensors' }));
+    expect(sql).toContain('FROM "iot"."sensors"');
+  });
+
+  it('treats a dot inside quotes as part of the identifier', () => {
+    expect(buildDownsamplingSql(query({ table: 'my.table' }))).toContain('FROM "my"."table"');
+    expect(buildDownsamplingSql(query({ table: '"my.table"' }))).toContain('FROM "my.table"');
+    expect(buildDownsamplingSql(query({ table: '"my"."table"' }))).toContain('FROM "my"."table"');
+    expect(buildDownsamplingSql(query({ table: 'db."my.table"' }))).toContain('FROM "db"."my.table"');
+    expect(buildDownsamplingSql(query({ table: 'db."my.table"' }))).not.toContain('"""');
+    expect(buildDownsamplingSql(query({ table: 'a."b.c".d' }))).toContain('FROM "a"."b.c"."d"');
+  });
+
+  it('cannot be broken out of through a hostile column name', () => {
+    const payload = 'x" ) AS evil --';
+    const sql = buildDownsamplingSql(query({ metrics: [{ column: payload, aggregation: 'avg' }] }));
+    // The payload is confined to a quoted identifier with doubled quotes.
+    expect(sql).toContain(`avg("x"" ) AS evil --")`);
+    expect(sql).not.toContain(payload);
+    expect(sql.startsWith('SELECT ')).toBe(true);
+  });
+
+  it('cannot be broken out of through a hostile table name', () => {
+    const sql = buildDownsamplingSql(query({ table: 'sensors"; DROP TABLE secrets; --' }));
+    expect(sql).toContain('FROM "sensors""; DROP TABLE secrets; --"');
+    expect(sql).not.toContain('\nDROP');
+    expect(sql.split('\n')).toHaveLength(6);
+  });
+
+  it('trims the table and the tags', () => {
+    const sql = buildDownsamplingSql(query({ table: '  sensors  ', tags: ['  device_id  '] }));
+    expect(sql).toContain('FROM "sensors"');
+    expect(sql).toContain(`       "device_id"`);
+    expect(sql).toContain('GROUP BY "time", "device_id"');
+  });
+
+  it('trims the time column and the metric column so SELECT and WHERE agree', () => {
+    const sql = buildDownsamplingSql(query({ timeColumn: '  ts  ', metrics: [metric({ column: ' temperature ' })] }));
+    expect(sql).toContain(`time_bucket("ts", '5m')`);
+    expect(sql).toContain(TIME_MACROS);
+    expect(sql).toContain(`avg("temperature") AS "avg_temperature"`);
+  });
+
+  it('returns an empty string when the table is missing', () => {
+    expect(buildDownsamplingSql(query({ table: undefined }))).toBe('');
+    expect(buildDownsamplingSql(query({ table: '   ' }))).toBe('');
+  });
+
+  it('returns an empty string when the time column is missing', () => {
+    expect(buildDownsamplingSql(query({ timeColumn: undefined }))).toBe('');
+    expect(buildDownsamplingSql(query({ timeColumn: '' }))).toBe('');
+  });
+
+  it('returns an empty string when there are no usable metrics', () => {
+    expect(buildDownsamplingSql(query({ metrics: [] }))).toBe('');
+    expect(buildDownsamplingSql(query({ metrics: undefined }))).toBe('');
+    expect(buildDownsamplingSql(query({ metrics: [{ column: '   ', aggregation: 'avg' }] }))).toBe('');
+  });
+});
+
+describe('buildGapfillSql', () => {
+  it('builds the canonical gapfill statement', () => {
+    const sql = buildGapfillSql(query({ mode: 'gapfill', tags: ['device_id'] }));
+    expect(sql).toBe(
+      [
+        `SELECT time_bucket_gapfill("ts", '5m') AS "time",`,
+        `       "device_id",`,
+        `       interpolate(avg("temperature"), 'linear') AS "avg_temperature"`,
+        'FROM "sensors"',
+        TIME_MACROS,
+        'GROUP BY "time", "device_id"',
+        'ORDER BY "time", "device_id"',
+      ].join('\n')
     );
   });
 
-  it('builds latest values SQL with last() and groups by tags', () => {
-    const query: KwdbQuery = {
-      ...base,
-      mode: 'latest',
-      table: 'ts_db.sensor_data',
-      timeColumn: 'ts',
-      latestFunc: 'last',
-      tags: ['device_id'],
-      metrics: [{ column: 'temperature', aggregation: 'none' }],
-    };
+  it('normalizes uppercase interpolate modes to lowercase quoted literals', () => {
+    // Older dashboards may still store the uppercase spellings, so they are cast here
+    // to reach normalizeInterpolateMode the same way untyped dashboard JSON would.
+    const legacy = (value: string) => value as KwdbInterpolateMode;
+    expect(buildGapfillSql(query({ mode: 'gapfill', interpolateMode: legacy('PREV') }))).toContain(
+      `interpolate(avg("temperature"), 'prev')`
+    );
+    expect(buildGapfillSql(query({ mode: 'gapfill', interpolateMode: legacy('NEXT') }))).toContain(
+      `interpolate(avg("temperature"), 'next')`
+    );
+    expect(buildGapfillSql(query({ mode: 'gapfill', interpolateMode: legacy('NULL') }))).toContain(
+      `interpolate(avg("temperature"), 'null')`
+    );
+  });
 
-    expect(buildLatestSql(query)).toBe(
+  // KWDB has no 'constant' keyword: interpolate(expr, 'constant') fails with
+  // "Interpolate/imputation method not supported". The value is emitted as a
+  // quoted numeric string, the form used in the KWDB documentation.
+  it('renders the constant mode as a quoted numeric string', () => {
+    const sql = buildGapfillSql(query({ mode: 'gapfill', interpolateMode: 'constant', interpolateConstant: 7 }));
+    expect(sql).toContain(`interpolate(avg("temperature"), '7')`);
+    expect(sql).not.toContain(`interpolate(avg("temperature"), 7)`);
+    expect(sql).not.toContain(`'constant'`);
+  });
+
+  it('defaults the constant fill value to 0', () => {
+    const sql = buildGapfillSql(query({ mode: 'gapfill', interpolateMode: 'constant' }));
+    expect(sql).toContain(`interpolate(avg("temperature"), '0')`);
+  });
+
+  it('coerces a non-finite constant to 0', () => {
+    const nan = buildGapfillSql(query({ mode: 'gapfill', interpolateMode: 'constant', interpolateConstant: NaN }));
+    expect(nan).toContain(`interpolate(avg("temperature"), '0')`);
+    const infinite = buildGapfillSql(
+      query({ mode: 'gapfill', interpolateMode: 'constant', interpolateConstant: Number.POSITIVE_INFINITY })
+    );
+    expect(infinite).toContain(`interpolate(avg("temperature"), '0')`);
+  });
+
+  it('accepts a negative constant', () => {
+    const sql = buildGapfillSql(query({ mode: 'gapfill', interpolateMode: 'constant', interpolateConstant: -1.5 }));
+    expect(sql).toContain(`interpolate(avg("temperature"), '-1.5')`);
+  });
+
+  it('quotes a constant that contains a single quote', () => {
+    const sql = buildGapfillSql(
+      query({ mode: 'gapfill', interpolateMode: 'constant', interpolateConstant: Number("1'2") })
+    );
+    // Number("1'2") is NaN, so this only proves the fallback is quoted too.
+    expect(sql).toContain(`interpolate(avg("temperature"), '0')`);
+  });
+
+  it('falls back to linear for an unknown interpolate mode', () => {
+    const sql = buildGapfillSql(query({ mode: 'gapfill', interpolateMode: 'quadratic' as 'linear' }));
+    expect(sql).toContain(`interpolate(avg("temperature"), 'linear')`);
+  });
+
+  it('coerces a legacy none aggregation to avg', () => {
+    // interpolate() requires an aggregate function ("the first parameter of
+    // interpolate must be agg func"), so the builder repairs a query saved while
+    // "none" was still offered for gapfill instead of emitting invalid SQL.
+    const sql = buildGapfillSql(query({ mode: 'gapfill', metrics: [{ column: 'voltage', aggregation: 'none' }] }));
+    expect(sql).toContain(`interpolate(avg("voltage"), 'linear') AS "avg_voltage"`);
+    expect(sql).not.toContain(`interpolate("voltage"`);
+    expect(sql).toContain('GROUP BY "time"');
+    expect(sql).not.toContain('GROUP BY "time", "voltage"');
+  });
+
+  it('keeps an explicit alias when coercing none to avg', () => {
+    const sql = buildGapfillSql(
+      query({ mode: 'gapfill', metrics: [{ column: 'voltage', aggregation: 'none', alias: 'volts' }] })
+    );
+    expect(sql).toContain(`interpolate(avg("voltage"), 'linear') AS "volts"`);
+  });
+
+  it('supports an explicit alias on an aggregated metric', () => {
+    const aliased = buildGapfillSql(query({ mode: 'gapfill', metrics: [metric({ alias: 'filled' })] }));
+    expect(aliased).toContain(`interpolate(avg("temperature"), 'linear') AS "filled"`);
+  });
+
+  it('returns an empty string when the table, time column or metrics are missing', () => {
+    expect(buildGapfillSql(query({ mode: 'gapfill', table: undefined }))).toBe('');
+    expect(buildGapfillSql(query({ mode: 'gapfill', timeColumn: undefined }))).toBe('');
+    expect(buildGapfillSql(query({ mode: 'gapfill', metrics: [] }))).toBe('');
+  });
+});
+
+describe('buildLatestSql', () => {
+  it('builds the canonical latest-values statement', () => {
+    const sql = buildLatestSql(query({ mode: 'latest', tags: ['device_id'] }));
+    expect(sql).toBe(
       [
-        'SELECT "device_id",',
-        '       last("temperature") AS "latest_temperature",',
-        '       last("ts") AS "time"',
-        'FROM "ts_db"."sensor_data"',
-        'WHERE "ts" >= $__timeFrom AND "ts" <= $__timeTo',
+        `SELECT "device_id",`,
+        `       last("temperature") AS "latest_temperature",`,
+        `       last("ts") AS "time"`,
+        'FROM "sensors"',
+        TIME_MACROS,
         'GROUP BY "device_id"',
       ].join('\n')
     );
   });
 
-  it.each([
-    ['last', 'last("ts")'],
-    ['last_row', 'last("ts")'],
-    ['first', 'first("ts")'],
-    ['first_row', 'first("ts")'],
-  ] as const)('uses a time expression matching %s() in latest values SQL', (latestFunc, timeExpr) => {
-    const query: KwdbQuery = {
-      ...base,
-      mode: 'latest',
-      table: 'sensors',
-      timeColumn: 'ts',
-      latestFunc,
-      metrics: [{ column: 'temperature', aggregation: 'none' }],
-    };
-
-    expect(buildLatestSql(query)).toContain(`       ${timeExpr} AS "time"`);
+  it('uses last() by default', () => {
+    const sql = buildLatestSql(query({ mode: 'latest' }));
+    expect(sql).toContain(`last("temperature") AS "latest_temperature"`);
+    expect(sql).toContain(`last("ts") AS "time"`);
   });
 
-  it('builds latest values SQL with first_row() and no GROUP BY when tags are empty', () => {
-    const query: KwdbQuery = {
-      ...base,
-      mode: 'latest',
-      table: 'sensors',
-      timeColumn: 'ts',
-      latestFunc: 'first_row',
-      metrics: [{ column: 'temperature', aggregation: 'none', alias: 'oldest_temp' }],
-    };
+  it('maps first and first_row onto first() for the time column', () => {
+    const first = buildLatestSql(query({ mode: 'latest', latestFunc: 'first' }));
+    expect(first).toContain(`first("temperature") AS "latest_temperature"`);
+    expect(first).toContain(`first("ts") AS "time"`);
 
-    expect(buildLatestSql(query)).toBe(
-      [
-        'SELECT first_row("temperature") AS "oldest_temp",',
-        '       first("ts") AS "time"',
-        'FROM "sensors"',
-        'WHERE "ts" >= $__timeFrom AND "ts" <= $__timeTo',
-      ].join('\n')
+    const firstRow = buildLatestSql(query({ mode: 'latest', latestFunc: 'first_row' }));
+    expect(firstRow).toContain(`first_row("temperature") AS "latest_temperature"`);
+    expect(firstRow).toContain(`first("ts") AS "time"`);
+  });
+
+  it('keeps last_row for the metric column but falls back to last() for the time column', () => {
+    // Documents the current behaviour: last_row() includes NULL rows while last(ts)
+    // skips them, so the reported time can come from a different row than the value.
+    const sql = buildLatestSql(query({ mode: 'latest', latestFunc: 'last_row' }));
+    expect(sql).toContain(`last_row("temperature") AS "latest_temperature"`);
+    expect(sql).toContain(`last("ts") AS "time"`);
+  });
+
+  it('honours an explicit metric alias', () => {
+    const sql = buildLatestSql(query({ mode: 'latest', metrics: [metric({ alias: 'current_temp' })] }));
+    expect(sql).toContain(`last("temperature") AS "current_temp"`);
+    expect(sql).not.toContain('latest_temperature');
+  });
+
+  it('groups by tags only when tags are configured', () => {
+    expect(buildLatestSql(query({ mode: 'latest', tags: ['device_id', 'location'] }))).toContain(
+      'GROUP BY "device_id", "location"'
     );
+    const withoutTags = buildLatestSql(query({ mode: 'latest', tags: [] }));
+    expect(withoutTags).not.toContain('GROUP BY');
   });
 
-  it('builds TIME_WINDOW SQL with slide interval', () => {
-    const query: KwdbQuery = {
-      ...base,
-      mode: 'window',
-      table: 'ts_db.sensor_data',
-      timeColumn: 'ts',
-      windowType: 'TIME_WINDOW',
-      windowInterval: '1h',
-      windowSlide: '15m',
-      tags: ['device_id'],
-      metrics: [{ column: 'temperature', aggregation: 'avg' }],
-    };
+  it('has no ORDER BY clause', () => {
+    expect(buildLatestSql(query({ mode: 'latest', tags: ['device_id'] }))).not.toContain('ORDER BY');
+  });
 
-    expect(buildWindowSql(query)).toBe(
+  it('returns an empty string when the table, time column or metrics are missing', () => {
+    expect(buildLatestSql(query({ mode: 'latest', table: undefined }))).toBe('');
+    expect(buildLatestSql(query({ mode: 'latest', timeColumn: undefined }))).toBe('');
+    expect(buildLatestSql(query({ mode: 'latest', metrics: [] }))).toBe('');
+  });
+});
+
+describe('buildWindowSql', () => {
+  it('builds the canonical TIME_WINDOW statement with the default 1h interval', () => {
+    const sql = buildWindowSql(query({ mode: 'window', windowType: 'TIME_WINDOW', tags: ['device_id'] }));
+    expect(sql).toBe(
       [
-        'SELECT first("ts") AS "time",',
-        '       "device_id",',
-        '       avg("temperature") AS "avg_temperature"',
-        'FROM "ts_db"."sensor_data"',
-        'WHERE "ts" >= $__timeFrom AND "ts" <= $__timeTo',
-        'GROUP BY "device_id", TIME_WINDOW("ts", \'1h\', \'15m\')',
+        `SELECT first("ts") AS "time",`,
+        `       "device_id",`,
+        `       avg("temperature") AS "avg_temperature"`,
+        'FROM "sensors"',
+        TIME_MACROS,
+        `GROUP BY "device_id", TIME_WINDOW("ts", '1h')`,
         'ORDER BY "time", "device_id"',
       ].join('\n')
     );
   });
 
-  it('builds SESSION_WINDOW, EVENT_WINDOW, COUNT_WINDOW and STATE_WINDOW SQL', () => {
-    const session: KwdbQuery = {
-      ...base,
-      mode: 'window',
-      table: 'sensors',
-      timeColumn: 'ts',
-      windowType: 'SESSION_WINDOW',
-      windowInterval: '5m',
-      metrics: [{ column: 'speed', aggregation: 'avg' }],
-    };
-    expect(buildWindowSql(session)).toContain('first("ts") AS "time"');
-    expect(buildWindowSql(session)).toContain('GROUP BY SESSION_WINDOW("ts", \'5m\')');
-
-    const event: KwdbQuery = {
-      ...session,
-      windowType: 'EVENT_WINDOW',
-      eventStartCond: 'temp > 100',
-      eventEndCond: 'temp <= 100',
-    };
-    expect(buildWindowSql(event)).toContain('GROUP BY EVENT_WINDOW(temp > 100, temp <= 100)');
-
-    const count: KwdbQuery = {
-      ...session,
-      windowType: 'COUNT_WINDOW',
-      windowInterval: '100',
-      windowSlide: '10',
-    };
-    expect(buildWindowSql(count)).toContain('GROUP BY COUNT_WINDOW(100, 10)');
-
-    const state: KwdbQuery = {
-      ...session,
-      windowType: 'STATE_WINDOW',
-      eventStartCond: 'CASE WHEN voltage >= 225 THEN 1 ELSE 0 END',
-    };
-    expect(buildWindowSql(state)).toContain(
-      'GROUP BY STATE_WINDOW(CASE WHEN voltage >= 225 THEN 1 ELSE 0 END)'
+  it('adds the slide interval to TIME_WINDOW', () => {
+    const sql = buildWindowSql(
+      query({ mode: 'window', windowType: 'TIME_WINDOW', windowInterval: '1h', windowSlide: '15m' })
     );
+    expect(sql).toContain(`GROUP BY TIME_WINDOW("ts", '1h', '15m')`);
   });
 
-  it('passes raw SQL through unchanged', () => {
-    const query: KwdbQuery = {
-      ...base,
-      mode: 'raw',
-      rawSql: 'SELECT "ts", "temperature" FROM "sensors" WHERE "ts" >= $__timeFrom',
-    };
-
-    expect(buildRawSql(query)).toBe(query.rawSql);
-    expect(buildSql(query)).toBe(query.rawSql);
+  it('ignores a blank slide interval', () => {
+    const sql = buildWindowSql(query({ mode: 'window', windowType: 'TIME_WINDOW', windowSlide: '   ' }));
+    expect(sql).toContain(`GROUP BY TIME_WINDOW("ts", '1h')`);
+    expect(sql).not.toContain("'   '");
   });
 
-  it('returns an empty string when required visual-builder fields are missing', () => {
-    expect(buildSql({ ...base, table: 'sensors' })).toBe('');
-    expect(buildSql({ ...base, timeColumn: 'ts', metrics: [{ column: 'temperature', aggregation: 'avg' }] })).toBe('');
-    expect(buildSql({ ...base, table: 'sensors', timeColumn: 'ts' })).toBe('');
-    expect(buildSql({ ...base, table: 'sensors', timeColumn: 'ts', metrics: [{ column: '', aggregation: 'avg' }] })).toBe(
-      ''
+  it('uses a 5m default for SESSION_WINDOW and ignores the slide', () => {
+    const sql = buildWindowSql(query({ mode: 'window', windowType: 'SESSION_WINDOW', windowSlide: '15m' }));
+    expect(sql).toContain(`GROUP BY SESSION_WINDOW("ts", '5m')`);
+    expect(sql).not.toContain('15m');
+  });
+
+  it('renders EVENT_WINDOW conditions verbatim', () => {
+    const sql = buildWindowSql(
+      query({
+        mode: 'window',
+        windowType: 'EVENT_WINDOW',
+        eventStartCond: 'temperature > 100',
+        eventEndCond: 'temperature <= 100',
+      })
+    );
+    expect(sql).toContain('GROUP BY EVENT_WINDOW(temperature > 100, temperature <= 100)');
+  });
+
+  it('returns an empty string for EVENT_WINDOW without both conditions', () => {
+    expect(
+      buildWindowSql(query({ mode: 'window', windowType: 'EVENT_WINDOW', eventStartCond: 'temperature > 100' }))
+    ).toBe('');
+    expect(
+      buildWindowSql(query({ mode: 'window', windowType: 'EVENT_WINDOW', eventEndCond: 'temperature <= 100' }))
+    ).toBe('');
+    expect(
+      buildWindowSql(query({ mode: 'window', windowType: 'EVENT_WINDOW', eventStartCond: '  ', eventEndCond: '  ' }))
+    ).toBe('');
+  });
+
+  it('renders COUNT_WINDOW with and without a slide', () => {
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10' }))).toContain(
+      'GROUP BY COUNT_WINDOW(10)'
     );
     expect(
-      buildWindowSql({
-        ...base,
-        mode: 'window',
-        table: 'sensors',
-        timeColumn: 'ts',
-        windowType: 'EVENT_WINDOW',
-        metrics: [{ column: 'temperature', aggregation: 'avg' }],
-      })
+      buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10', windowSlide: '5' }))
+    ).toContain('GROUP BY COUNT_WINDOW(10, 5)');
+  });
+
+  it('defaults the COUNT_WINDOW row limit to 100, matching the editor field', () => {
+    // The editor renders "Row limit" with an initial value of 100 while the query
+    // model still has windowInterval undefined. The statement must agree with what
+    // the user sees, and must not depend on the field being touched.
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW' }))).toContain(
+      'GROUP BY COUNT_WINDOW(100)'
+    );
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '  ' }))).toContain(
+      'GROUP BY COUNT_WINDOW(100)'
+    );
+  });
+
+  it('rejects a non-numeric COUNT_WINDOW row limit', () => {
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: 'ten' }))).toBe('');
+    expect(
+      buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10; DROP TABLE sensors' }))
     ).toBe('');
+  });
+
+  it('rejects COUNT_WINDOW arguments that are not positive integers', () => {
+    // COUNT_WINDOW takes int8 row counts, so decimals and 0 fail in KWDB.
+    for (const windowInterval of ['10.5', '0', '-5', '1e3']) {
+      expect(buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval }))).toBe('');
+    }
+    expect(
+      buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10', windowSlide: '2.5' }))
+    ).toBe('');
+    expect(
+      buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10', windowSlide: '0' }))
+    ).toBe('');
+  });
+
+  it('renders STATE_WINDOW from the start condition', () => {
+    const sql = buildWindowSql(query({ mode: 'window', windowType: 'STATE_WINDOW', eventStartCond: 'status' }));
+    expect(sql).toContain('GROUP BY STATE_WINDOW(status)');
+  });
+
+  it('returns an empty string for STATE_WINDOW without an expression', () => {
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'STATE_WINDOW' }))).toBe('');
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'STATE_WINDOW', eventStartCond: '   ' }))).toBe('');
+  });
+
+  it('returns an empty string for an unknown or missing window type', () => {
+    expect(buildWindowSql(query({ mode: 'window' }))).toBe('');
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'MYSTERY_WINDOW' as 'TIME_WINDOW' }))).toBe('');
+  });
+
+  it('returns an empty string when the table, time column or metrics are missing', () => {
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'TIME_WINDOW', table: undefined }))).toBe('');
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'TIME_WINDOW', timeColumn: undefined }))).toBe('');
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'TIME_WINDOW', metrics: [] }))).toBe('');
+  });
+
+  it('groups by the window expression alone when no tags are configured', () => {
+    const sql = buildWindowSql(query({ mode: 'window', windowType: 'TIME_WINDOW', tags: [] }));
+    expect(sql).toContain(`GROUP BY TIME_WINDOW("ts", '1h')`);
+    expect(sql).toContain('ORDER BY "time"');
+  });
+
+  // KWDB: "no other columns can follow grouped window function" - the window
+  // expression must stay last in the GROUP BY list.
+  it('places a bare metric column before the window expression in GROUP BY', () => {
+    const sql = buildWindowSql(
+      query({ mode: 'window', windowType: 'TIME_WINDOW', metrics: [{ column: 'temperature', aggregation: 'none' }] })
+    );
+    expect(sql).toContain(`GROUP BY "temperature", TIME_WINDOW("ts", '1h')`);
+    expect(sql).not.toContain(`GROUP BY TIME_WINDOW("ts", '1h'), "temperature"`);
+  });
+
+  it('keeps tags, bare columns and the window expression in that order', () => {
+    const sql = buildWindowSql(
+      query({
+        mode: 'window',
+        windowType: 'TIME_WINDOW',
+        tags: ['device_id'],
+        metrics: [
+          { column: 'temperature', aggregation: 'avg' },
+          { column: 'voltage', aggregation: 'none' },
+        ],
+      })
+    );
+    expect(sql).toContain(`GROUP BY "device_id", "voltage", TIME_WINDOW("ts", '1h')`);
+  });
+
+  it('rejects event conditions that could terminate the statement or open a comment', () => {
+    // The free-form fragments are spliced into the statement, so anything that
+    // could break out of the GROUP BY list is refused instead of emitted.
+    const injected = buildWindowSql(
+      query({
+        mode: 'window',
+        windowType: 'EVENT_WINDOW',
+        eventStartCond: 'temperature > 100) OR 1=1 --',
+        eventEndCond: 'temperature <= 100',
+      })
+    );
+    expect(injected).toBe('');
+
+    const semicolon = buildWindowSql(
+      query({
+        mode: 'window',
+        windowType: 'STATE_WINDOW',
+        eventStartCond: 'status = 1; DROP TABLE sensors',
+      })
+    );
+    expect(semicolon).toBe('');
+
+    const comment = buildWindowSql(
+      query({ mode: 'window', windowType: 'STATE_WINDOW', eventStartCond: 'status = 1 /* x */' })
+    );
+    expect(comment).toBe('');
+  });
+
+  it('requires numeric COUNT_WINDOW arguments', () => {
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10' }))).toContain(
+      'GROUP BY COUNT_WINDOW(10)'
+    );
+    expect(
+      buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10', windowSlide: '5' }))
+    ).toContain('GROUP BY COUNT_WINDOW(10, 5)');
+    expect(
+      buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10; DROP TABLE sensors' }))
+    ).toBe('');
+    expect(
+      buildWindowSql(
+        query({
+          mode: 'window',
+          windowType: 'COUNT_WINDOW',
+          windowInterval: '10',
+          windowSlide: '5; DROP TABLE sensors',
+        })
+      )
+    ).toBe('');
+  });
+
+  it('selects the window start with first() on the time column', () => {
+    const sql = buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10' }));
+    expect(sql).toContain(`SELECT first("ts") AS "time"`);
+    expect(sql).not.toContain('time_bucket');
+  });
+});
+
+// Dashboard JSON is not type-checked, so these fields can hold anything at
+// runtime. They must be rejected instead of being spliced into the statement.
+describe('untyped dashboard JSON', () => {
+  const bogus = (aggregation: string) =>
+    [{ column: 'voltage', aggregation }] as unknown as [{ column: string; aggregation: 'avg' }];
+
+  it('returns an empty statement for an unsupported aggregation', () => {
+    expect(buildDownsamplingSql(query({ metrics: bogus('median') }))).toBe('');
+    expect(buildGapfillSql(query({ mode: 'gapfill', metrics: bogus('avg); DROP TABLE sensors; --') }))).toBe('');
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'TIME_WINDOW', metrics: bogus('x') }))).toBe('');
+    expect(buildLatestSql(query({ mode: 'latest', metrics: bogus('') }))).toBe('');
+  });
+
+  it('returns an empty statement for an unsupported latest function', () => {
+    expect(buildLatestSql(query({ mode: 'latest', latestFunc: 'last; DROP TABLE sensors' as 'last' }))).toBe('');
+    expect(buildLatestSql(query({ mode: 'latest', latestFunc: 'last' }))).toContain('last("temperature")');
+  });
+});
+
+describe('buildRawSql', () => {
+  it('returns the raw SQL unchanged', () => {
+    const rawSql = 'SELECT 1\nFROM sensors;\n';
+    expect(buildRawSql(query({ mode: 'raw', rawSql }))).toBe(rawSql);
+  });
+
+  it('does not trim the raw SQL', () => {
+    expect(buildRawSql(query({ mode: 'raw', rawSql: '   SELECT 1   ' }))).toBe('   SELECT 1   ');
+  });
+
+  it('returns an empty string when no raw SQL is set', () => {
+    expect(buildRawSql(query({ mode: 'raw' }))).toBe('');
+    expect(buildRawSql(query({ mode: 'raw', rawSql: undefined }))).toBe('');
+  });
+});
+
+describe('buildSql', () => {
+  it('dispatches to the gapfill builder', () => {
+    const q = query({ mode: 'gapfill' });
+    expect(buildSql(q)).toBe(buildGapfillSql(q));
+    expect(buildSql(q)).toContain('time_bucket_gapfill');
+  });
+
+  it('dispatches to the latest builder', () => {
+    const q = query({ mode: 'latest' });
+    expect(buildSql(q)).toBe(buildLatestSql(q));
+    expect(buildSql(q)).toContain('last("temperature") AS "latest_temperature"');
+  });
+
+  it('dispatches to the window builder', () => {
+    const q = query({ mode: 'window', windowType: 'SESSION_WINDOW' });
+    expect(buildSql(q)).toBe(buildWindowSql(q));
+    expect(buildSql(q)).toContain('SESSION_WINDOW');
+  });
+
+  it('dispatches to the raw SQL builder', () => {
+    const q = query({ mode: 'raw', rawSql: 'SELECT 1' });
+    expect(buildSql(q)).toBe('SELECT 1');
+  });
+
+  it('dispatches to the downsampling builder for downsampling mode', () => {
+    const q = query({ mode: 'downsampling' });
+    expect(buildSql(q)).toBe(buildDownsamplingSql(q));
+    expect(buildSql(q)).toContain('time_bucket("ts"');
+  });
+
+  it('falls back to downsampling for an unknown mode', () => {
+    const q = query({ mode: 'mystery' as 'downsampling' });
+    expect(buildSql(q)).toBe(buildDownsamplingSql(q));
+  });
+
+  it('ignores format and splitByTag because they only shape frames downstream', () => {
+    const timeSeries = buildSql(query({ mode: 'downsampling', format: 'time_series' }));
+    const table = buildSql(query({ mode: 'downsampling', format: 'table' }));
+    const split = buildSql(query({ mode: 'latest', format: 'time_series', splitByTag: true, tags: ['device_id'] }));
+    const merged = buildSql(query({ mode: 'latest', format: 'table', splitByTag: false, tags: ['device_id'] }));
+    expect(table).toBe(timeSeries);
+    expect(merged).toBe(split);
+    expect(timeSeries).not.toMatch(/\bformat\b|\blong\b/);
+  });
+
+  it('injects the time macros in every builder mode except raw', () => {
+    const modes = [
+      query({ mode: 'downsampling' }),
+      query({ mode: 'gapfill' }),
+      query({ mode: 'latest' }),
+      query({ mode: 'window', windowType: 'TIME_WINDOW' }),
+    ];
+    for (const q of modes) {
+      expect(buildSql(q)).toContain('$__timeFrom');
+      expect(buildSql(q)).toContain('$__timeTo');
+    }
+    expect(buildSql(query({ mode: 'raw', rawSql: 'SELECT 1' }))).not.toContain('$__timeFrom');
   });
 });

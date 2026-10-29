@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { IconButton, Input, Select, Stack } from '@grafana/ui';
 
 import type { ColumnInfo, MetricSpec } from '../../../types';
-import { getAggregationsForColumn } from './aggregations';
+import { type MetricAggregation, getAggregationsForColumn } from './aggregations';
 import { ColumnPicker } from './ColumnPicker';
 
 interface Props {
@@ -12,17 +12,28 @@ interface Props {
   onChange: (metric: MetricSpec) => void;
   onRemove?: () => void;
   hideAggregation?: boolean;
+  /**
+   * Aggregations to leave out of the dropdown. Gapfill uses this to drop
+   * "none": interpolate() requires an aggregate function as its first argument,
+   * so a bare column produces "the first parameter of interpolate must be agg
+   * func" from KWDB.
+   */
+  excludeAggregations?: MetricAggregation[];
 }
 
-export function MetricRow({ index, columns, metric, onChange, onRemove, hideAggregation }: Props) {
-  const aggregations = getAggregationsForColumn(columns, metric.column);
+export function MetricRow({ index, columns, metric, onChange, onRemove, hideAggregation, excludeAggregations }: Props) {
+  const excluded = useMemo(() => new Set(excludeAggregations ?? []), [excludeAggregations]);
+  const allowedAggregations = (columnName?: string) =>
+    getAggregationsForColumn(columns, columnName).filter((aggregation) => !excluded.has(aggregation));
+  const aggregations = allowedAggregations(metric.column);
 
   const handleColumnChange = (value: string[]) => {
     const column = value[0] ?? '';
     // Reset the aggregation when the newly selected column does not support it
-    // (e.g. switching from a FLOAT8 to a VARCHAR or tag column).
-    const allowed = getAggregationsForColumn(columns, column);
-    const aggregation = allowed.includes(metric.aggregation) ? metric.aggregation : allowed[0];
+    // (e.g. switching from a FLOAT8 to a VARCHAR or tag column), choosing only
+    // from the aggregations this row actually offers.
+    const allowed = allowedAggregations(column);
+    const aggregation = allowed.includes(metric.aggregation) ? metric.aggregation : (allowed[0] ?? metric.aggregation);
     onChange({ ...metric, column, aggregation });
   };
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { QueryEditor } from '../src/components/QueryEditor';
 import type { KwdbDataSource } from '../src/datasource';
@@ -25,6 +25,7 @@ const COLUMNS: ColumnInfo[] = [
   { name: 'k_timestamp', type: 'TIMESTAMP', isTag: false, isTimeColumn: true, isPrimaryTag: false },
   { name: 'device_id', type: 'VARCHAR', isTag: true, isTimeColumn: false, isPrimaryTag: true },
   { name: 'temperature', type: 'FLOAT8', isTag: false, isTimeColumn: false, isPrimaryTag: false },
+  { name: 'note', type: 'VARCHAR', isTag: false, isTimeColumn: false, isPrimaryTag: false },
 ];
 
 const BASE_QUERY: KwdbQuery = {
@@ -45,10 +46,9 @@ function makeDatasource(): KwdbDataSource {
 function renderEditor(query: KwdbQuery) {
   const onChange = jest.fn();
   const onRunQuery = jest.fn();
-  render(
-    <QueryEditor datasource={makeDatasource()} query={query} onChange={onChange} onRunQuery={onRunQuery} />
-  );
-  return { onChange, onRunQuery };
+  const datasource = makeDatasource();
+  render(<QueryEditor datasource={datasource} query={query} onChange={onChange} onRunQuery={onRunQuery} />);
+  return { onChange, onRunQuery, datasource };
 }
 
 function renderWithState(initialQuery: KwdbQuery) {
@@ -153,8 +153,9 @@ describe('QueryEditor', () => {
         eventEndCond: undefined,
       })
     );
-    // COUNT_WINDOW needs a row limit, so no SQL is generated until one is entered.
-    expect(updated.rawSql).toBe('');
+    // COUNT_WINDOW falls back to the editor's default row limit of 100, so a
+    // statement is generated as soon as the type is selected.
+    expect(updated.rawSql).toContain('COUNT_WINDOW(100)');
   });
 
   it('keeps window fields when the current window type is selected again', async () => {
@@ -248,7 +249,50 @@ describe('QueryEditor', () => {
     fireEvent.change(constantInput, { target: { value: '42' } });
 
     expect((screen.getByTestId('sql-preview-editor') as HTMLTextAreaElement).value).toContain(
-      'interpolate(avg("temperature"), 42)'
+      'interpolate(avg("temperature"), \'42\')'
     );
+  });
+
+  it('repairs a legacy gapfill query with aggregation none when a non-metric field changes', async () => {
+    const { onChange } = renderEditor({
+      ...BASE_QUERY,
+      mode: 'gapfill',
+      table: 'sensors',
+      timeColumn: 'k_timestamp',
+      interval: '5m',
+      metrics: [{ column: 'temperature', aggregation: 'none' }],
+      rawSql: 'stale invalid sql',
+    });
+
+    const intervalInput = screen.getByLabelText('Interval');
+    fireEvent.change(intervalInput, { target: { value: '90s' } });
+    fireEvent.keyDown(intervalInput, { key: 'Enter', keyCode: 13 });
+
+    const updated = onChange.mock.calls[0][0] as KwdbQuery;
+    // interpolate() needs an aggregate, so the builder repairs `none` instead of
+    // emitting "the first parameter of interpolate must be agg func".
+    expect(updated.metrics).toEqual([{ column: 'temperature', aggregation: 'avg' }]);
+    expect(updated.rawSql).toContain(`interpolate(avg("temperature"), 'linear') AS "avg_temperature"`);
+    expect(updated.rawSql).not.toContain('interpolate("temperature"');
+  });
+
+  it('does not offer the none aggregation in the gapfill editor and falls back within the allowed ones', async () => {
+    const { onChange, datasource } = renderEditor({
+      ...BASE_QUERY,
+      mode: 'gapfill',
+      table: 'sensors',
+      timeColumn: 'k_timestamp',
+      metrics: [{ column: 'temperature', aggregation: 'avg' }],
+    });
+
+    await waitFor(() => expect(datasource.getColumns).toHaveBeenCalled());
+    fireEvent.keyDown(screen.getByLabelText('Metric column 0'), { key: 'ArrowDown', keyCode: 40 });
+    fireEvent.click(await screen.findByRole('option', { name: /note/ }));
+
+    const updated = onChange.mock.calls[0][0] as KwdbQuery;
+    // 'note' is a VARCHAR column, so only count/none are meaningful; none is
+    // excluded here, which leaves count as the fallback.
+    expect(updated.metrics).toEqual([{ column: 'note', aggregation: 'count' }]);
+    expect(updated.rawSql).toContain(`interpolate(count("note"), 'linear')`);
   });
 });

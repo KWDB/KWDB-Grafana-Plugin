@@ -16,6 +16,9 @@ export interface MetricSpec {
 
 export interface KwdbQuery extends DataQuery {
   mode: KwdbQueryMode;
+  // Output format and per-tag frame splitting are consumed by the backend
+  // (pkg/plugin/frame.go), never by the SQL builder: they must not change the
+  // generated statement.
   format: KwdbQueryFormat;
   // Common fields
   table?: string;
@@ -87,7 +90,8 @@ export interface TableInfo {
 }
 
 // Template variable query: either built by the variable query editor or parsed
-// from a raw query string like `tag_values(table, column)`.
+// from a raw query string like `tag_values(table, column)`. Intentionally not a
+// DataQuery: a variable query has no refId.
 export interface KwdbVariableQuery {
   queryType: 'tagValues' | 'tables' | 'columns';
   table?: string;

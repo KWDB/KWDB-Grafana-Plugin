@@ -1,7 +1,7 @@
 # KWDB TSDB 数据源插件：Grafana 插件签名与 Advisor 调研报告
 
 - 日期：2026-10-27
-- 调研人：`sign-advisor`（Team Lead 的签名/Advisor 调研子代理）
+- 整理：维护者
 - 范围：**只读调研 + 本文件**。未修改任何仓库代码、未 commit/push、未往 `package.json` 新增依赖。
 - 关联对象：`kwdb-tsdb-datasource`（插件 ID `lumingsun-kwdbtsdb-datasource`，type `datasource`，`backend: true`，`grafanaDependency: >=13.1.0`，版本 `1.2.1`）
 
@@ -31,7 +31,7 @@
 export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 \
        all_proxy=socks5://127.0.0.1:7890 NODE_USE_ENV_PROXY=1 \
        npm_config_cache=/tmp/npm-cache-sign \
-       PATH=/Users/sunluming/.nvm/versions/node/v22.18.0/bin:$PATH
+       PATH=<node-22-bin>:$PATH
 
 npm view @grafana/sign-plugin@latest version engines dependencies --registry https://registry.npmjs.org/
 # => version = '4.0.0'
@@ -264,7 +264,7 @@ v4 生成 manifest 的具体规则（`dist/utils/manifest.js`）：
 | v4 `engines.node` | `>=24.5.0` | `npm view` + `node_modules/.../package.json` |
 | v4 运行时硬门 | `major < 24 \|\| (major === 24 && minor < 5)` → `Node.js >=24.5.0 is required.` | `dist/bin/run.js` |
 | 官方文档口径 | Node.js **24.15.0** 或更高（因为依赖 Node 24.15 的原生代理） | sign-a-plugin.md / CHANGELOG `use Node 24.15 native proxy (#3013)` |
-| 本机 Node | `v22.18.0`（`/Users/sunluming/.nvm/versions/node/v22.18.0/bin/node`） | 实测 |
+| 本机 Node | `v22.18.0`（`<node-22-bin>/node`） | 实测 |
 | 本仓库 devDependency | `@grafana/sign-plugin@^3.3.3` → 实际安装 `3.3.3`，`engines.node: >=20` | `package.json` / `yarn.lock` / `node_modules` |
 | `package.json` `engines` | `node: >=22` | `package.json` |
 | `.nvmrc` | `22` | `.nvmrc` |
@@ -308,7 +308,7 @@ You must create a GRAFANA_ACCESS_POLICY_TOKEN env variable to sign plugins.
 ```text
 npm error code EPERM
 npm error syscall mkdir
-npm error path /Users/sunluming/.npm/_cacache
+npm error path $HOME/.npm/_cacache
 npm error Your cache folder contains root-owned files ...
 ```
 

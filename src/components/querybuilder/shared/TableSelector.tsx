@@ -44,7 +44,7 @@ export function TableSelector({ datasource, value, onChange }: Props) {
       isLoading={state.loading}
       options={options}
       value={value ? { label: selected ? (selected.type ? `${selected.name} (${selected.type})` : selected.name) : value, value } : undefined}
-      onChange={(item) => onChange(item.value ?? '')}
+      onChange={(item) => onChange(item?.value ?? '')}
       placeholder="Select table"
       isClearable
       menuShouldPortal={false}

@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest an improvement to the KWDB TSDB Grafana data source
+title: '[Feature]: '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing an idea. Please describe the problem or workflow
+        behind the request, not only the proposed implementation. Search
+        existing issues and discussions first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to accomplish? Include the query pattern, panel type, data shape, or workflow involved.
+      placeholder: |
+        I want to ...
+        Today I have to ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: If you have an idea for the behavior or UI, describe it here.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or other approaches have you tried? Why are they insufficient? Write "None" if this is a new capability.
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add examples, screenshots, links, or version details that would help evaluate the request. Redact sensitive information.
+    validations:
+      required: false

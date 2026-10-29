@@ -41,11 +41,18 @@ func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSetti
 	if err != nil {
 		return nil, err
 	}
+	// Validate first: after applyDefaults a negative value would already have
+	// been replaced by a default, so it could no longer be rejected.
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	applyDefaults(cfg)
 
 	poolCfg, err := pgxpool.ParseConfig(buildConnString(*cfg, secrets.Password))
 	if err != nil {
-		return nil, fmt.Errorf("could not parse pgx connection string: %w", err)
+		// The connection string contains the password; keep it out of the error
+		// shown in the Grafana UI even though pgx is not expected to print it.
+		return nil, fmt.Errorf("could not parse pgx connection string: %s", sanitizeMessage(err.Error()))
 	}
 	if cfg.MaxConns > math.MaxInt32 {
 		cfg.MaxConns = math.MaxInt32
@@ -127,16 +134,17 @@ func applyDefaults(cfg *models.DataSourceSettings) {
 	if cfg.SSLMode == "" {
 		cfg.SSLMode = defaultSSLMode
 	}
-	if cfg.MaxConns <= 0 {
+	// Zero means "not configured"; negatives were rejected by Validate.
+	if cfg.MaxConns == 0 {
 		cfg.MaxConns = defaultPoolMaxConns
 	}
-	if cfg.MaxConnLifetime <= 0 {
+	if cfg.MaxConnLifetime == 0 {
 		cfg.MaxConnLifetime = defaultPoolMaxConnLifetime
 	}
-	if cfg.MaxConnIdleTime <= 0 {
+	if cfg.MaxConnIdleTime == 0 {
 		cfg.MaxConnIdleTime = defaultPoolMaxConnIdleTime
 	}
-	if cfg.ConnectTimeout <= 0 {
+	if cfg.ConnectTimeout == 0 {
 		cfg.ConnectTimeout = defaultPoolConnectTimeout
 	}
 }

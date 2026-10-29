@@ -468,7 +468,7 @@ Uses `host: kwdb` (the docker-compose service name) so the Grafana container res
 
 ### 6.4 Environment notes
 
-- Node must be v22 (use `PATH=/Users/sunluming/.nvm/versions/node/v22.18.0/bin:$PATH`)
+- Node must be v22 (use `PATH=<node-22-bin>:$PATH`)
 - `yarn` installed via `corepack enable && corepack prepare yarn@1.22.22 --activate`
 - Go build: `GOCACHE=/private/tmp/kwdb-gocache`
 - Mage: `MAGEFILE_CACHE=/private/tmp/kwdb-magefile GOCACHE=/private/tmp/kwdb-gocache`

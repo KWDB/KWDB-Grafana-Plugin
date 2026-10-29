@@ -109,7 +109,7 @@ func TestQueryTimeoutAndMaxRowsDefaults(t *testing.T) {
 }
 
 func TestSanitizeErrorRedactsCredentials(t *testing.T) {
-	err := errors.New(`could not connect to postgres://root:s3cret@10.0.0.1:26257/factory: refused`)
+	err := errors.New(`could not connect to postgres://root:s3cret@db.example.com:26257/example_db: refused`)
 	got := sanitizeError(err)
 	if strings.Contains(got, "s3cret") {
 		t.Fatalf("sanitizeError leaked the password: %q", got)

@@ -1,6 +1,6 @@
 module github.com/kaiwudb/kwdb-tsdb-datasource
 
-go 1.26.5
+go 1.26.10
 
 require github.com/grafana/grafana-plugin-sdk-go v0.297.0
 
@@ -80,7 +80,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
-	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

@@ -5,7 +5,7 @@
 //
 // The whole suite can be pointed at another KWDB database without touching the tests, e.g.:
 //
-//   KWDB_E2E_TABLE=factory.equipment_telemetry \
+//   KWDB_E2E_TABLE=example_db.equipment_telemetry \
 //   KWDB_E2E_TIME_COLUMN=k_timestamp \
 //   KWDB_E2E_COLUMNS='k_timestamp, device_id, current_val' \
 //   KWDB_E2E_TAG_COLUMN=device_id \

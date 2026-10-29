@@ -4,7 +4,7 @@ This plugin connects [Grafana](https://grafana.com) to KaiwuDB and its open-sour
 
 > 本插件适用于 KaiwuDB 及其开源版本 KWDB，可以在 Grafana 中查询、展示和分析 KWDB 时序数据。
 
-![KWDB dashboard example](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/example.png)
+![KWDB dashboard example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/example.png)
 
 ## Features
 
@@ -38,25 +38,25 @@ This plugin connects [Grafana](https://grafana.com) to KaiwuDB and its open-sour
 
 ## Configuration
 
-| Field | Description |
-| --- | --- |
-| Host | KWDB host, for example `10.0.0.10`. |
-| Port | PostgreSQL-compatible port, default `26257`. |
-| Database | Database to query, default `defaultdb`. |
-| User | Database user, default `root`. Prefer a read-only account. |
-| SSL Mode | `disable`, `require`, `verify-ca`, or `verify-full`. |
-| SSL Root Cert | Path to the CA certificate for `verify-ca` / `verify-full`. |
-| Password | Database password, stored in Grafana secure JSON data. |
-| Query timeout | Per-statement timeout in seconds (default `30`, `-1` disables). Applied as both `statement_timeout` and a query deadline. |
-| Max rows | Rows buffered per frame (default `100000`, `-1` disables). The query is cancelled once the cap is reached. |
-| Max connections | Connection pool size (default `8`). |
-| Connect timeout | Connection timeout in seconds (default `5`). |
+| Field           | Description                                                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Host            | KWDB host, for example `10.0.0.10`.                                                                                       |
+| Port            | PostgreSQL-compatible port, default `26257`.                                                                              |
+| Database        | Database to query, default `defaultdb`.                                                                                   |
+| User            | Database user, default `root`. Prefer a read-only account.                                                                |
+| SSL Mode        | `disable`, `require`, `verify-ca`, or `verify-full`.                                                                      |
+| SSL Root Cert   | Path to the CA certificate for `verify-ca` / `verify-full`.                                                               |
+| Password        | Database password, stored in Grafana secure JSON data.                                                                    |
+| Query timeout   | Per-statement timeout in seconds (default `30`, `-1` disables). Applied as both `statement_timeout` and a query deadline. |
+| Max rows        | Rows buffered per frame (default `100000`, `-1` disables). The query is cancelled once the cap is reached.                |
+| Max connections | Connection pool size (default `8`).                                                                                       |
+| Connect timeout | Connection timeout in seconds (default `5`).                                                                              |
 
-![Data source settings](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/kwdb-datasource.png)
+![Data source settings](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/kwdb-datasource.png)
 
 Click **Save & test** to verify connectivity. The backend executes `SELECT 1` and reports whether the data source is working.
 
-![Save and test](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/save-test.png)
+![Save and test](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/save-test.png)
 
 ## Query editor
 
@@ -74,7 +74,7 @@ Each visual mode generates SQL automatically and shows a read-only SQL preview.
 
 Select a table, time column, interval, tag columns for `GROUP BY`, and one or more metrics. Aggregations: `avg`, `sum`, `count`, `min`, `max`, `stddev`, `none`.
 
-![Downsampling example](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/downsampling-example.png)
+![Downsampling example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/downsampling-example.png)
 
 ### Gapfill
 
@@ -96,17 +96,17 @@ LIMIT 100
 
 Available macros:
 
-| Macro | Expansion |
-| --- | --- |
-| `$__timeFilter(column)` | `column >= '...'::TIMESTAMP AND column <= '...'::TIMESTAMP` |
-| `$__timeFrom` | Dashboard time range start as a timestamp literal |
-| `$__timeTo` | Dashboard time range end as a timestamp literal |
-| `$__timeGroup(column, 'interval')` | `time_bucket(column, 'interval')` |
+| Macro                              | Expansion                                                   |
+| ---------------------------------- | ----------------------------------------------------------- |
+| `$__timeFilter(column)`            | `column >= '...'::TIMESTAMP AND column <= '...'::TIMESTAMP` |
+| `$__timeFrom`                      | Dashboard time range start as a timestamp literal           |
+| `$__timeTo`                        | Dashboard time range end as a timestamp literal             |
+| `$__timeGroup(column, 'interval')` | `time_bucket(column, 'interval')`                           |
 
 ## Output formats
 
 - **Time series**: the backend finds the time column, sorts by time, converts tag columns into labels, and produces a wide time-series frame with one series per tag combination. Choose this for chart panels such as **Time series**, **Stat**, and **Gauge**.
-- **Table**: the result is returned as raw rows (long format). Choose this for the **Table** panel. Latest-values queries with tag columns additionally return one frame per tag combination by default.
+- **Table**: the result is returned as raw rows. Choose this for the **Table** panel. Latest-values queries with tag columns additionally return one frame per tag combination by default.
 
 Result rows are capped at 100,000 rows per frame. When the cap is reached, the frame includes a warning notice.
 
@@ -132,19 +132,21 @@ Read-only access is enforced in three layers:
 - **Results are truncated:** the backend caps results at 100,000 rows per frame (configurable). Add `LIMIT` or narrow the time range.
 - **Queries time out:** the default statement timeout is 30 seconds. Note that `time_bucket_gapfill` + `interpolate` is much slower than plain downsampling: on a multi-million-row table a 30 day gapfill can exceed 30 seconds while the same range downsamples in well under a second.
 - **`SHOW` statement is rejected:** `SHOW` is allowed for schema and session variables, but forms that expose cluster or session state are blocked (`SHOW SESSIONS`, `SHOW QUERIES`, `SHOW JOBS`, `SHOW TRACE`, `SHOW STATISTICS`, `SHOW BACKUP`, `SHOW ALL`, `SHOW SCHEDULES`, `SHOW CHANGEFEEDS`).
+- **Window queries fail with `group-window-func: memory budget exceeded`:** sliding windows (`TIME_WINDOW` with a slide interval) and `COUNT_WINDOW` buffer every row of the range in memory, so a long dashboard time range exhausts KWDB's window memory budget. This is a database-side limit, not a plugin one. Narrow the panel time range, or drop the slide interval so the window boundaries line up with the range instead of overlapping.
+- **Annotation queries return nothing:** Grafana derives annotation events from a `time` column plus a text column, so an annotation query has to use **Table** format. A builder query in Time series format fails with `could not convert frame to time series` because its result has no text column.
 
 ## Development and publishing
 
-- See [DEVELOPMENT.md](https://github.com/LumingSun/kwdb-tsdb-datasource/blob/master/DEVELOPMENT.md) for local development, testing, and packaging instructions.
+- See [DEVELOPMENT.md](https://github.com/LumingSun/KWDB-Grafana-Plugin/blob/master/DEVELOPMENT.md) for local development, testing, and packaging instructions.
 - Plugin ID: `lumingsun-kwdbtsdb-datasource`; it must match the Grafana Cloud organization slug `lumingsun`.
 - First submissions do not require a signature. After review, versions are signed and released through the `Release` GitHub Actions workflow.
 - Full instructions are in the [Grafana plugin publishing guide](https://grafana.com/developers/plugin-tools/publish-a-plugin).
 
 ## Support
 
-- Report bugs and request features: [GitHub issues](https://github.com/LumingSun/kwdb-tsdb-datasource/issues)
+- Report bugs and request features: [GitHub issues](https://github.com/LumingSun/KWDB-Grafana-Plugin/issues)
 - KaiwuDB: <https://www.kaiwudb.com>
 
 ## License
 
-Apache License 2.0. See [LICENSE](https://github.com/LumingSun/kwdb-tsdb-datasource/blob/master/LICENSE).
+Apache License 2.0. See [LICENSE](https://github.com/LumingSun/KWDB-Grafana-Plugin/blob/master/LICENSE).

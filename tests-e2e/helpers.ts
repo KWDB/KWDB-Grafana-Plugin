@@ -105,8 +105,34 @@ export function labelledFields(frame: DataFrame): FrameField[] {
   });
 }
 
-function escapeRegExp(value: string): string {
+export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Waits until the read-only SQL preview contains the expected fragment of the generated
+ * statement.
+ *
+ * The preview is a monaco editor whose input textarea mirrors the whole statement (newlines
+ * included), so the text is read from there instead of the `.view-line` elements monaco
+ * virtualises while the editor re-renders. Monaco syncs that textarea asynchronously, so the
+ * read is retried until the builder has produced the statement.
+ */
+export async function expectSqlPreviewContains(page: Page, expected: string, message: string): Promise<void> {
+  const editor = page.getByTestId('sql-preview').getByRole('textbox');
+  await expect(editor, 'the SQL preview did not render an editor').toBeAttached();
+
+  const deadline = Date.now() + 15_000;
+  let sql = '';
+  while (Date.now() < deadline) {
+    sql = (await editor.inputValue().catch(() => '')).replace(/\s+/g, ' ').trim();
+    if (sql.includes(expected)) {
+      return;
+    }
+    await page.waitForTimeout(250);
+  }
+
+  expect(sql, message).toContain(expected);
 }
 
 /**
@@ -116,8 +142,11 @@ function escapeRegExp(value: string): string {
  * so the accessible option name becomes `current_val FLOAT8`. Callers may pass a RegExp for
  * those cases. The retry loop tolerates options that are populated asynchronously (e.g. after
  * the /columns resource response).
+ *
+ * Exported so specs that drive dropdowns which only exist in a single editor mode (the
+ * latest-function and tags pickers, the window parameters) do not need a private copy.
  */
-async function pickOption(page: Page, comboboxName: string, optionName: string | RegExp): Promise<void> {
+export async function pickOption(page: Page, comboboxName: string, optionName: string | RegExp): Promise<void> {
   const combobox = page.getByRole('combobox', { name: comboboxName });
   const option =
     typeof optionName === 'string'
@@ -139,7 +168,10 @@ async function pickOption(page: Page, comboboxName: string, optionName: string |
   throw new Error(`Could not select option ${String(optionName)} in the "${comboboxName}" dropdown`);
 }
 
-export async function setMode(page: Page, mode: 'Downsampling' | 'Gapfill' | 'Latest Values' | 'Window/Event' | 'Raw SQL') {
+export async function setMode(
+  page: Page,
+  mode: 'Downsampling' | 'Gapfill' | 'Latest Values' | 'Window/Event' | 'Raw SQL'
+) {
   await pickOption(page, 'Mode', mode);
 }
 

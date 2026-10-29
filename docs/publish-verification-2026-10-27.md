@@ -102,7 +102,7 @@ detail: This is a new (unpublished) plugin. This is expected during the initial
 report.count = 2   report.failures = []
 ```
 
-→ 两个 provisioned 的 KWDB TSDB 数据源的 `health-check`、`uid-validation`、`missing-plugin` 步骤**全部通过**。`/api/datasources/uid/kwdb-tsdb/health` 亦返回 `{"message":"Data source is working","status":"OK"}`（后端真实连到 KWDB 10.110.105.80:26267 并执行 `SELECT 1`）。
+→ 两个 provisioned 的 KWDB TSDB 数据源的 `health-check`、`uid-validation`、`missing-plugin` 步骤**全部通过**。`/api/datasources/uid/kwdb-tsdb/health` 亦返回 `{"message":"Data source is working","status":"OK"}`（后端真实连到 KWDB db.example.com:26257 并执行 `SELECT 1`）。
 
 **`plugin` 检查**（type=`plugin`，59 个插件）：失败项共 6 条，全部 `severity: low`，其中 5 条是 Grafana 自带 drilldown app 的 `update` 提示，与本插件无关；唯一与本插件相关的一条是：
 
@@ -137,7 +137,7 @@ report.count = 2   report.failures = []
 3. **提交审核**：Grafana Cloud → Org Settings → **My Plugins → Submit New Plugin**
    - OS & Architecture：**Single**（zip 内含 6 个平台二进制）
    - URL：Release zip 直链
-   - Source code URL：`https://github.com/LumingSun/kwdb-tsdb-datasource/tree/v1.2.2`
+   - Source code URL：`https://github.com/LumingSun/KWDB-Grafana-Plugin/tree/v1.2.2`
    - SHA1：`sha1sum` 输出（release 资产里的 `.sha1` 文件）
    - Testing guidance：安装/配置/使用说明
    - 勾选 **Provisioning provided for test environment**（仓库已提供 `docker-compose.yaml` + `provisioning/`）

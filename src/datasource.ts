@@ -1,18 +1,14 @@
 import { CoreApp, DataSourceInstanceSettings, MetricFindValue } from '@grafana/data';
 import { DataSourceWithBackend } from '@grafana/runtime';
 
-import {
-  ColumnInfo,
-  DEFAULT_QUERY,
-  KwdbDataSourceOptions,
-  KwdbQuery,
-  TableInfo,
-} from './types';
+import { ColumnInfo, DEFAULT_QUERY, KwdbDataSourceOptions, KwdbQuery, TableInfo } from './types';
 import { parseVariableQuery } from './variableQuery';
+import { KwdbVariableSupport } from './variableSupport';
 
 export class KwdbDataSource extends DataSourceWithBackend<KwdbQuery, KwdbDataSourceOptions> {
   constructor(instanceSettings: DataSourceInstanceSettings<KwdbDataSourceOptions>) {
     super(instanceSettings);
+    this.variables = new KwdbVariableSupport(this);
   }
 
   getTables(): Promise<TableInfo[]> {

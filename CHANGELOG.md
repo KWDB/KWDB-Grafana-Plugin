@@ -1,5 +1,98 @@
 # Changelog
 
+## v1.3.0 (2026-10-29)
+
+### Added
+
+- Unit tests for the SQL builder and the template variable query parser: all
+  five builder modes, identifier quoting, window/event argument validation and
+  the parse/render round trip.
+- Unit tests for the field reset applied when the table or the window type
+  changes, the variable support class, the health check error classification and
+  the connection settings validation.
+- End-to-end tests for the latest values and window/event builder modes and for
+  annotation queries (12 new cases). The suite runs in CI against a KWDB
+  container seeded by `scripts/init.sql` and passes on Grafana 13.1, 13.2, 13.3
+  and nightly.
+- CI now runs the complete Grafana plugin validator (all analyzers) on every
+  pull request, with the same command and version as the release workflow.
+  Previously only the metadata analyzer ran in CI; the release workflow has run
+  the full validator since v1.2.2 (2026-10-28).
+- `docs/real-server-verification-2026-10-29.md` records the end-to-end runs
+  against live KWDB instances (addresses and accounts redacted): generated SQL
+  statements, the Go backend pipeline, Playwright specs, the alerting path and
+  the TLS modes (`require`, `verify-ca`, `verify-full`, plus plaintext
+  rejection).
+- `RoadMap.md` / `RoadMap_en.md` describe the release plan and the items that
+  are explicitly out of scope.
+- `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md` and GitHub issue / PR
+  templates.
+
+### Changed
+
+- The data source registers its template variable editor and query
+  implementation through the `variables` property of the data source instance;
+  the deprecated `DataSourcePlugin.setVariableQueryEditor` is no longer used.
+- Health check failures are prefixed with a short classification (authentication
+  failed, database does not exist, connection timed out, TLS negotiation
+  failed, ...). The original database error, including its SQLSTATE, is still
+  shown.
+- Connection settings are validated before the pool is created: the port must
+  be in 1-65535 and `sslmode` only accepts the four modes offered by the
+  configuration page.
+- The constant interpolation fill value is emitted as a quoted string
+  (`interpolate(avg(col), '0')`), the form used in the KWDB documentation,
+  instead of a bare numeric literal.
+- `plugin.json` links point at the renamed repository and the plugin declares
+  `category: tsdb` for the Grafana connection directory.
+- The release workflow verifies that the pushed tag matches the version in
+  `package.json`, writes a SHA-256 checksum for the archive and warns when the
+  CHANGELOG has no section for the version instead of silently falling back.
+- Documentation: the README troubleshooting section covers the KWDB window
+  memory budget and the requirement that annotation queries use Table format.
+
+### Fixed
+
+- SQL builder: the SELECT list and the WHERE clause now quote the same
+  identifier when the time column or a metric column contains leading or
+  trailing whitespace, and a blank interval falls back to the 5m default.
+- SQL builder: a schema-qualified table name that contains a dot inside quotes
+  (for example `"my.table"`) is no longer rewritten into two identifiers.
+- SQL builder: selecting `none` as the aggregation no longer produces a
+  statement the database rejects. Non-aggregated metric columns are added to the
+  GROUP BY list; for window queries they are placed before the window
+  expression, because KWDB requires a grouped window function to be the last
+  GROUP BY entry.
+- SQL builder: `COUNT_WINDOW` falls back to a row limit of 100, the value the
+  "Row limit" field shows. Previously a newly selected `COUNT_WINDOW` generated
+  an empty statement while the field read 100.
+- SQL builder: a latest-values query without tags now produces a frame whose
+  first field is the time column, so Grafana keeps treating it as a time series.
+- SQL builder: gapfill no longer offers `none` (interpolate() requires an
+  aggregate) and coerces a value left over from an older query to `avg`.
+- Time macros are no longer expanded inside string literals, quoted identifiers
+  or comments; nested macro calls are expanded from the inside out.
+- Template variable queries accept quoted arguments that contain a comma,
+  reject parentheses in identifiers, and always render a definition the plugin
+  can parse back. A trailing semicolon separated from the query by whitespace no
+  longer produces a misleading "unsupported variable query" error.
+- Structured variable queries are validated for every query type and returned as
+  a copy, so a caller can no longer mutate the parsed result.
+- The annotation end-to-end tests match the query request by the generated SQL
+  instead of the annotation picker.
+
+### Security
+
+- Window/event free-form arguments are validated in the builder: event and state
+  conditions that could terminate the statement or open a comment are rejected,
+  and `COUNT_WINDOW` limits must be positive integers.
+- `sslmode` values that pgx would silently downgrade to a plaintext connection
+  (`allow`, `prefer`) are rejected.
+- The Go toolchain baseline is now 1.26.10 and `golang.org/x/net` is upgraded to
+  v0.60.0, clearing the standard-library and HTTP/2 advisories reported by
+  `govulncheck`; the dependency scan is blocking in CI and in the release
+  workflow again.
+
 ## v1.2.2 (2026-10-27)
 
 ### Changed
@@ -76,6 +169,4 @@
 
 [Full Changelog](https://github.com/LumingSun/KWDB-Grafana-Plugin/compare/6d2886713db4b6cdd8897f2246376a8be56347d5...v1.0.0)
 
-
-
-\* *This Changelog was automatically generated by [github_changelog_generator](https://github.com/github-changelog-generator/github-changelog-generator)*
+\* _This Changelog was automatically generated by [github_changelog_generator](https://github.com/github-changelog-generator/github-changelog-generator)_

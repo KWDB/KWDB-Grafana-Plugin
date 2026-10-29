@@ -63,7 +63,7 @@
 | 30 | 发布/CI 工作流完整性 | **PASS** | `release.yml`：tag `v*` 触发 → `npm run build` → `mage buildAll` → 条件 `npm run sign` → `mv dist <id>` + `zip -r` + `sha1sum`（提交表单要求的 SHA1）→ **`npx --yes @grafana/plugin-validator@0.50.0` 作为阻断门禁** → 抽取 CHANGELOG 生成 release notes → `gh release create`。`ci.yml`：typecheck/lint/unit test/build frontend/golangci-lint(含 gosec)/go test/govulncheck/`grafana/plugin-validator-cli -analyzer=metadatavalid`/多版本 Grafana Playwright e2e | 见 #31 |
 | 31 | 签名所需的 Grafana Cloud Access Policy token | **WARN（需人工）** | `release.yml:60-62` 注释明示 Sign 步骤被 `if: ${{ env.GRAFANA_ACCESS_POLICY_TOKEN != '' }}` 跳过，"unsigned builds are still published"；仓库 secrets 中尚未配置 `GRAFANA_ACCESS_POLICY_TOKEN`。publish-faqs：「All plugins require signatures unless they are in development or being submitted to review for the first time.」首次提交可无签名，但**通过审核后的每次更新都必须签名** | 人工：在 Grafana Cloud（组织 `lumingsun`）→ My Account → Security → Access Policies 创建 Realm=`lumingsun`(all-stacks)、Scope=`plugins:write` 的 policy 并生成 token，添加到 GitHub 仓库 Secrets 的 `GRAFANA_ACCESS_POLICY_TOKEN`；然后手动触发一次带签名的 release |
 | 32 | provisioned 测试环境 | **PASS** | `docker-compose.yaml` 启动 `kwdb/kwdb`（26257/8080）+ Grafana（默认 3001，可用 `GRAFANA_PORT` 覆盖），`scripts/init.sql` 种子 `demo_ts.sensors`；`provisioning/datasources/datasources.yml` 通过 `KWDB_HOST/KWDB_PORT/KWDB_DATABASE/KWDB_USER/KWDB_PASSWORD` 注册数据源；`provisioning/dashboards/kwdb-sensors.json` 为示例仪表板；`provisioning/README.md` 有说明。符合 provide-test-environment.md 要求，可缩短审核 | 提交表单勾选 "Provisioning provided for test environment" |
-| 33 | 公开 Git 仓库（Community 签名前置条件） | **PASS** | `git remote -v` → `https://github.com/LumingSun/kwdb-tsdb-datasource.git`；已存在 tag `v1.0.0`–`v1.2.1`，默认分支 `master`。publish-faqs 建议源码 URL 使用 tag/branch 而非 HEAD | 提交时 Source code URL 用 `https://github.com/LumingSun/kwdb-tsdb-datasource/tree/v1.2.1` |
+| 33 | 公开 Git 仓库（Community 签名前置条件） | **PASS** | `git remote -v` → `https://github.com/LumingSun/KWDB-Grafana-Plugin.git`；已存在 tag `v1.0.0`–`v1.2.1`，默认分支 `master`。publish-faqs 建议源码 URL 使用 tag/branch 而非 HEAD | 提交时 Source code URL 用 `https://github.com/LumingSun/KWDB-Grafana-Plugin/tree/v1.2.1` |
 | 34 | `dist/` 是否为可提交的当前构建 | **PASS** | `dist/` 时间戳为 2026-10-27 14:02–15:00，`plugin.json` version `1.2.1` / updated `2026-10-27`，含 6 个平台二进制 + `module.js` + `img/`（logo.svg + screenshot-query-editor.png）+ `CHANGELOG.md` + `LICENSE` + `README.md`。`ls -a dist` 无隐藏文件。`dist/` 未被 git 跟踪 | 任何源码/README 修改后必须重新 build 再打包 |
 | 35 | `plugin.json` `category` 字段 | **WARN（可选优化）** | schema 定义了 `category`（`tsdb`/`logging`/`cloud`/`tracing`/`profiling`/`sql`/`enterprise`/`iot`/`other`/自定义），用于 Grafana「Add new connection」页分类；当前 `src/plugin.json` 未声明 | 可选：增加 `"category": "tsdb"`（或 `"sql"`）以改善目录展示位置 |
 | 36 | `query_help.md` / `docsPath` | **PASS（可选）** | `.config/bundler/copyFiles.ts:17` 已配置 `{ from: '**/query_help.md', to: '.', noErrorOnMissing: true }`，但 `src/` 下不存在该文件，`plugin.json` 也未设 `docsPath`。均为可选项，不影响 schema 校验 | 可选：为查询编辑器加 `src/components/query_help.md` 提升可用性 |
@@ -78,7 +78,7 @@
 
 ## 3. 发布前必须由人工完成的步骤
 
-> 以下步骤均**未**在本次只读核查中执行，也不应由 agent 代做（涉及账号权限、密钥、提交与外部系统操作）。
+> 以下步骤均**未**在本次只读核查中执行，也不应由自动化工具代做（涉及账号权限、密钥、提交与外部系统操作）。
 
 ### A. 提交前的内容修复（建议顺序）
 
@@ -92,7 +92,7 @@
 5. 修改完成后重新执行：
 
 ```bash
-PATH=/Users/sunluming/.nvm/versions/node/v22.18.0/bin:$PATH yarn install --frozen-lockfile
+PATH=<node-22-bin>:$PATH yarn install --frozen-lockfile
 yarn typecheck && yarn lint && yarn test:ci
 yarn build
 mage -v buildAll        # 或：CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o dist/gpx_kwdb_tsdb_datasource_linux_arm64 -tags arrow_json_stdlib -ldflags '-w -s' ./pkg
@@ -118,7 +118,7 @@ npx --yes @grafana/plugin-validator@latest -jsonOutput "${PLUGIN_ID}.zip"
 
 8. 用 **Grafana Cloud 组织 slug 为 `lumingsun`** 的管理员账号登录 <https://grafana.com/auth/sign-in>。
 9. My Account → Security → Access Policies → Create access policy：**Realm = `lumingsun` (all-stacks)**，**Scope = `plugins:write`** → Create token。
-10. 把 token 写入 GitHub 仓库 `LumingSun/kwdb-tsdb-datasource` 的 Secrets，名称 `GRAFANA_ACCESS_POLICY_TOKEN`（`release.yml:26` 读取的就是这个名字）。
+10. 把 token 写入 GitHub 仓库 `LumingSun/KWDB-Grafana-Plugin` 的 Secrets，名称 `GRAFANA_ACCESS_POLICY_TOKEN`（`release.yml:26` 读取的就是这个名字）。
 11. 推送版本 tag 触发 release：`git tag v1.2.1 && git push origin v1.2.1`（tag 已存在时改为推送新 tag）。工作流会自动 build → buildAll → `npm run sign`（生成 `MANIFEST.txt`）→ 打包 → `sha1sum` → **plugin-validator 阻断门禁** → 创建 GitHub Release。
 
 ### D. Grafana 侧提交表单（需人工填写）
@@ -127,7 +127,7 @@ npx --yes @grafana/plugin-validator@latest -jsonOutput "${PLUGIN_ID}.zip"
 13. 表单字段：
     - **OS & Architecture**：本插件单个 ZIP 内含 6 个平台二进制 → 选 **Single**（官方对 clickhouse 插件的打包示例即多架构合一包）。
     - **URL**：指向 GitHub Release 资产 `<plugin-id>-<version>.zip` 的直链。
-    - **Source code URL**：`https://github.com/LumingSun/kwdb-tsdb-datasource/tree/v1.2.1`（用 tag，不要用 HEAD）。
+    - **Source code URL**：`https://github.com/LumingSun/KWDB-Grafana-Plugin/tree/v1.2.1`（用 tag，不要用 HEAD）。
     - **SHA1**：`sha1sum <archive>.zip` 的输出（`release.yml` 已生成 `<archive>.zip.sha1`）。
     - **Testing guidance**：从根 `README.md` 提炼安装/配置/使用说明（必须写清 KWDB 端口 `26257`、`sslmode`、需要只读账号）。
     - **Provisioning provided for test environment**：**勾选**（仓库已有 `docker-compose.yaml` + `provisioning/`）。

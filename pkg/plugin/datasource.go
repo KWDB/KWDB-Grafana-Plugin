@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -59,7 +60,7 @@ func (d *Datasource) query(ctx context.Context, query backend.DataQuery) backend
 	var qm models.QueryModel
 	err := json.Unmarshal(query.JSON, &qm)
 	if err != nil {
-		return backend.ErrDataResponseWithSource(backend.StatusBadRequest, backend.ErrorSourcePlugin, fmt.Sprintf("json unmarshal: %v", err.Error()))
+		return backend.ErrDataResponseWithSource(backend.StatusBadRequest, backend.ErrorSourcePlugin, "json unmarshal: "+err.Error())
 	}
 
 	if strings.TrimSpace(qm.RawSql) == "" {
@@ -120,6 +121,17 @@ func errorSourceFor(err error) backend.ErrorSource {
 	if errors.As(err, &pgErr) {
 		return backend.ErrorSourceDownstream
 	}
+	// A connection failure (refused, unreachable, TLS, DNS) is reported by the
+	// downstream database endpoint, not by a plugin bug, so Grafana should not
+	// label it "plugin error".
+	var connectErr *pgconn.ConnectError
+	if errors.As(err, &connectErr) {
+		return backend.ErrorSourceDownstream
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return backend.ErrorSourceDownstream
+	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return backend.ErrorSourceDownstream
 	}
@@ -133,17 +145,17 @@ func (d *Datasource) CheckHealth(ctx context.Context, _ *backend.CheckHealthRequ
 	}
 	rows, err := d.pool.Query(ctx, "SELECT 1")
 	if err != nil {
-		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: sanitizeError(err)}, nil
+		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: healthCheckMessage(err)}, nil
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var one int32
 		if err := rows.Scan(&one); err != nil {
-			return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: sanitizeError(err)}, nil
+			return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: healthCheckMessage(err)}, nil
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: sanitizeError(err)}, nil
+		return &backend.CheckHealthResult{Status: backend.HealthStatusError, Message: healthCheckMessage(err)}, nil
 	}
 	return &backend.CheckHealthResult{
 		Status:  backend.HealthStatusOk,

@@ -7,7 +7,9 @@ Grafana time series or table data.
 
 > 本插件适用于 KaiwuDB 及其开源版本 KWDB，可以在 Grafana 中查询、展示和分析
 > KWDB 时序数据。
-![example](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/example.png)
+
+![example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/example.png)
+
 ## Features
 
 - Visual SQL builder for downsampling, gapfill, latest values, and window/event
@@ -36,10 +38,10 @@ Grafana time series or table data.
 - KWDB or KaiwuDB with a PostgreSQL-compatible endpoint (default port `26257`)
 - A database account with read access; prefer a dedicated read-only account
 
-| Component | Requirement |
-| --- | --- |
-| Grafana | 13.1 or newer (built and tested against 13.1.0) |
-| KWDB / KaiwuDB | PostgreSQL-compatible endpoint, default port `26257` |
+| Component        | Requirement                                               |
+| ---------------- | --------------------------------------------------------- |
+| Grafana          | 13.1 or newer (built and tested against 13.1.0)           |
+| KWDB / KaiwuDB   | PostgreSQL-compatible endpoint, default port `26257`      |
 | Database account | Read access; a dedicated read-only account is recommended |
 
 ## Installation
@@ -86,7 +88,7 @@ with `GRAFANA_PORT`.
 To point the provisioned data source at an existing KWDB instance:
 
 ```bash
-KWDB_HOST=10.110.105.80 KWDB_PORT=26258 KWDB_DATABASE=ts_db \
+KWDB_HOST=db.example.com KWDB_PORT=26257 KWDB_DATABASE=example_db \
   docker compose up -d --no-deps grafana
 ```
 
@@ -98,21 +100,21 @@ KWDB_HOST=10.110.105.80 KWDB_PORT=26258 KWDB_DATABASE=ts_db \
 4. Fill in the connection settings.
 5. Click **Save & test**.
 
-![KWDB Datasource](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/kwdb-datasource.png)
+![KWDB Datasource](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/kwdb-datasource.png)
 
-| Field | Description |
-| --- | --- |
-| Host | KWDB host, for example `10.0.0.10`. |
-| Port | PostgreSQL-compatible port, default `26257`. |
-| Database | Database to query, default `defaultdb`. |
-| User | Database user, default `root`. Prefer a read-only account. |
-| SSL Mode | `disable`, `require`, `verify-ca`, or `verify-full`. |
-| SSL Root Cert | Path to the CA certificate for `verify-ca` / `verify-full`. |
-| Password | Database password, stored in Grafana secure JSON data. |
-| Query timeout | Per-statement timeout in seconds (default `30`, `-1` disables). Applied as both `statement_timeout` and a query deadline. |
-| Max rows | Rows buffered per frame (default `100000`, `-1` disables). The query is cancelled once the cap is reached. |
-| Max connections | Connection pool size (default `8`). |
-| Connect timeout | Connection timeout in seconds (default `5`). |
+| Field           | Description                                                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Host            | KWDB host, for example `10.0.0.10`.                                                                                       |
+| Port            | PostgreSQL-compatible port, default `26257`.                                                                              |
+| Database        | Database to query, default `defaultdb`.                                                                                   |
+| User            | Database user, default `root`. Prefer a read-only account.                                                                |
+| SSL Mode        | `disable`, `require`, `verify-ca`, or `verify-full`.                                                                      |
+| SSL Root Cert   | Path to the CA certificate for `verify-ca` / `verify-full`.                                                               |
+| Password        | Database password, stored in Grafana secure JSON data.                                                                    |
+| Query timeout   | Per-statement timeout in seconds (default `30`, `-1` disables). Applied as both `statement_timeout` and a query deadline. |
+| Max rows        | Rows buffered per frame (default `100000`, `-1` disables). The query is cancelled once the cap is reached.                |
+| Max connections | Connection pool size (default `8`).                                                                                       |
+| Connect timeout | Connection timeout in seconds (default `5`).                                                                              |
 
 ### TLS/SSL
 
@@ -125,7 +127,7 @@ as `sslrootcert`.
 Click **Save & test** to verify connectivity. The backend executes `SELECT 1`
 and reports whether the data source is working.
 
-![test-datasource](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/save-test.png)
+![test-datasource](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/save-test.png)
 
 ## Build a dashboard
 
@@ -157,7 +159,7 @@ more metrics.
 
 Aggregations: `avg`, `sum`, `count`, `min`, `max`, `stddev`, `none`.
 
-![downsampling example](https://github.com/LumingSun/kwdb-tsdb-datasource/raw/master/src/img/downsampling-example.png)
+![downsampling example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/downsampling-example.png)
 
 ### Gapfill
 
@@ -173,7 +175,6 @@ Gapfill fills missing time buckets with `time_bucket_gapfill` and
 `interpolate` accepts a lower-case quoted method name or a numeric constant.
 Queries generated by older plugin versions that stored `PREV`/`NEXT`/`NULL`
 are normalised to the lower-case form automatically.
-
 
 ### Latest values
 
@@ -201,7 +202,6 @@ a single merged table frame instead. As a panel-side alternative, Gauge/Stat
 panels can also set **Value options → Show: All values** to expand grouped
 rows into one value per device.
 
-
 ### Window/Event
 
 Window/Event queries use KWDB window functions:
@@ -211,7 +211,6 @@ Window/Event queries use KWDB window functions:
 - `EVENT_WINDOW`
 - `COUNT_WINDOW`
 - `STATE_WINDOW`
-
 
 ### Raw SQL
 
@@ -231,12 +230,12 @@ LIMIT 100
 
 ## Time macros
 
-| Macro | Expansion |
-| --- | --- |
-| `$__timeFilter(column)` | `column >= '...'::TIMESTAMP AND column <= '...'::TIMESTAMP` |
-| `$__timeFrom` | Dashboard time range start as a timestamp literal |
-| `$__timeTo` | Dashboard time range end as a timestamp literal |
-| `$__timeGroup(column, 'interval')` | `time_bucket(column, 'interval')` |
+| Macro                              | Expansion                                                   |
+| ---------------------------------- | ----------------------------------------------------------- |
+| `$__timeFilter(column)`            | `column >= '...'::TIMESTAMP AND column <= '...'::TIMESTAMP` |
+| `$__timeFrom`                      | Dashboard time range start as a timestamp literal           |
+| `$__timeTo`                        | Dashboard time range end as a timestamp literal             |
+| `$__timeGroup(column, 'interval')` | `time_bucket(column, 'interval')`                           |
 
 Timestamp literals carry sub-second precision, but Grafana only provides
 millisecond dashboard ranges and KWDB's default `TIMESTAMP` precision is
@@ -260,7 +259,7 @@ Each query returns one of two formats, selectable in the query editor toolbar
   tag columns into labels, and produces a wide time-series frame with one
   series per tag combination. Choose this for chart panels such as **Time
   series**, **Stat**, and **Gauge** so every device is drawn separately.
-- **Table**: the result is returned as raw rows (long format). Choose this for
+- **Table**: the result is returned as raw rows. Choose this for
   the **Table** panel. Latest-values queries with tag columns additionally
   return one frame per tag combination by default, so Gauge/Stat panels still
   show one value per device; disable the **Split per tag** toggle to return a
@@ -315,6 +314,16 @@ write.
 - Confirm the port is reachable from the Grafana backend.
 - Check KWDB account permissions.
 
+### TLS handshake fails or plaintext still connects
+
+- `verify-ca` and `verify-full` require the **SSL Root Cert** field to point at
+  the CA that signed the node certificate; without it the connection is
+  rejected.
+- KWDB does not reject plaintext connections for its built-in administrative
+  account even when the server was started with `--certs-dir`. To actually
+  enforce TLS, connect with a non-administrative account and configure the
+  server's HBA to reject non-TLS connections for that account.
+
 ### Table list is empty
 
 - Confirm the configured database exists.
@@ -344,10 +353,36 @@ write.
   `SHOW JOBS`, `SHOW TRACE`, `SHOW STATISTICS`, `SHOW BACKUP`, `SHOW ALL`,
   `SHOW SCHEDULES`, `SHOW CHANGEFEEDS`.
 
+### Window queries fail with `group-window-func: memory budget exceeded`
+
+- Sliding windows (`TIME_WINDOW` with a slide interval) and `COUNT_WINDOW` buffer
+  every row of the requested range in memory, so a long dashboard time range
+  exhausts KWDB's window memory budget.
+- This is a database-side limit, not a plugin one. Narrow the panel time range,
+  or drop the slide interval so the window boundaries line up with the range
+  instead of overlapping.
+- The error is most reproducible on the default 30 day builder range used by the
+  end-to-end tests, which is why those tests use a short configurable range.
+
+### Annotation queries return nothing
+
+- Grafana derives annotation events from a `time` column plus a text column, so
+  an annotation query has to use **Table** format.
+- A builder query left in `Time series` format fails with
+  `could not convert frame to time series`, because its result has no text
+  column. Set the query format to `Table` before using it as an annotation
+  source.
+
 ## Development and publishing
 
 - See [DEVELOPMENT.md](DEVELOPMENT.md) for local development, testing, and
   packaging.
+- See [RoadMap.md](RoadMap.md) for the release plan and the items that are
+  explicitly out of scope.
+- Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+  development workflow and the pull request checklist.
+- To report a security vulnerability, follow [SECURITY.md](SECURITY.md) instead
+  of opening a public issue.
 - Plugin ID: `lumingsun-kwdbtsdb-datasource`
 - First submissions do not require a signature. After review, versions are
   signed and released through the `Release` GitHub Actions workflow.
