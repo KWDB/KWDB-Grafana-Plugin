@@ -35,6 +35,9 @@ artifacts/
 work/
 ci/
 
+# Internal development / audit documents (kept locally, not published)
+docs/
+
 # e2e test directories
 /test-results/
 /playwright-report/
