@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.4.1 (2026-10-29)
+
+### Changed
+
+- Plugin ID is now `kwdb-tsdb-datasource`. Submitting v1.4.0 to the catalog
+  returned `invalid-id-format`: the validator requires the `org-name-type`
+  convention with at least three hyphen-separated parts, and
+  `kwdb-datasource` has only two. `kwdb-datasource` was never accepted, so no
+  published version changes identity; data sources created from the v1.4.0 ZIP
+  have to be recreated after the upgrade.
+
+### Fixed
+
+- Backend: the connection pool size no longer trips gosec `G115`. The clamp was
+  applied to a struct field, which gosec does not follow, and the
+  `//nolint:gosec` comment that was meant to suppress it only silences
+  golangci-lint — the gosec run performed by the catalog validator still
+  reported the conversion as HIGH. It is now clamped on a local variable, which
+  gosec can follow, so the finding is gone without a `#nosec` directive.
+- Backend: `golang.org/x/net` updated from v0.60.0 to v0.62.0, clearing
+  GO-2026-6860 and GO-2026-6866. Both were reported by the catalog validator's
+  `govulncheck` binary scan of the v1.4.0 archives; the plugin never calls the
+  vulnerable `html` symbols, so a source-mode scan was clean while the binary
+  scan was not.
+
 ## v1.4.0 (2026-10-29)
 
 ### Changed

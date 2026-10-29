@@ -54,11 +54,18 @@ func NewDatasource(ctx context.Context, settings backend.DataSourceInstanceSetti
 		// shown in the Grafana UI even though pgx is not expected to print it.
 		return nil, fmt.Errorf("could not parse pgx connection string: %s", sanitizeMessage(err.Error()))
 	}
-	if cfg.MaxConns > math.MaxInt32 {
-		cfg.MaxConns = math.MaxInt32
+	// pgxpool.Config.MaxConns is an int32 while the setting is an int. The clamp
+	// has to be applied to a local variable: gosec tracks the guard there but
+	// not through a struct field, which is why clamping cfg.MaxConns in place
+	// still produced a G115 finding. (//nolint:gosec is a golangci-lint
+	// directive; gosec itself only honours #nosec, so it did not suppress it.)
+	// Validate rejects negative values and applyDefaults replaced zero, so only
+	// the upper bound has to be capped here.
+	maxConns := cfg.MaxConns
+	if maxConns > math.MaxInt32 {
+		maxConns = math.MaxInt32
 	}
-	//nolint:gosec // cfg.MaxConns is clamped to MaxInt32 above.
-	poolCfg.MaxConns = int32(cfg.MaxConns)
+	poolCfg.MaxConns = int32(maxConns)
 	poolCfg.MinConns = poolMinConns
 	poolCfg.MaxConnLifetime = time.Duration(cfg.MaxConnLifetime) * time.Second
 	poolCfg.MaxConnIdleTime = time.Duration(cfg.MaxConnIdleTime) * time.Second

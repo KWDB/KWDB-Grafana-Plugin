@@ -2,7 +2,7 @@ apiVersion: 1
 
 datasources:
   - name: 'KWDB TSDB'
-    type: 'kwdb-datasource'
+    type: 'kwdb-tsdb-datasource'
     uid: 'kwdb-tsdb'
     access: proxy
     isDefault: true
