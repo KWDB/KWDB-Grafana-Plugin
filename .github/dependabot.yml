@@ -11,6 +11,13 @@ updates:
       exclude:
         - '@grafana/plugin-e2e'
     open-pull-requests-limit: 5
+    # ESLint 10 is not supported by eslint-plugin-react yet (its peer range stops
+    # at ESLint 9.x), so a major eslint bump fails lint. Revisit once
+    # eslint-plugin-react supports ESLint 10; tracked in issue #29.
+    ignore:
+      - dependency-name: 'eslint'
+        update-types:
+          - 'version-update:semver-major'
     commit-message:
       prefix: 'chore'
       include: 'scope'
