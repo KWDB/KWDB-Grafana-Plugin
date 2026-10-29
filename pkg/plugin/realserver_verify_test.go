@@ -194,7 +194,7 @@ func frameSummary(t *testing.T, res backend.DataResponse) string {
 	}
 	var sb strings.Builder
 	for i, f := range res.Frames {
-		sb.WriteString(fmt.Sprintf("frame[%d] rows=%d cols=[", i, f.Rows()))
+		fmt.Fprintf(&sb, "frame[%d] rows=%d cols=[", i, f.Rows())
 		for j, field := range f.Fields {
 			if j > 0 {
 				sb.WriteString(", ")
@@ -251,22 +251,6 @@ func TestRealServerHealthFailureHints(t *testing.T) {
 			}
 		})
 	}
-}
-
-func replaceDatabase(dsn, db string) string {
-	at := strings.LastIndex(dsn, "@")
-	rest := dsn[at+1:]
-	slash := strings.Index(rest, "/")
-	if slash < 0 {
-		return dsn + "/" + db
-	}
-	tail := rest[slash+1:]
-	if q := strings.Index(tail, "?"); q >= 0 {
-		tail = tail[q:]
-	} else {
-		tail = ""
-	}
-	return dsn[:at+1] + rest[:slash] + "/" + db + tail
 }
 
 func replacePort(dsn, port string) string {
