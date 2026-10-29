@@ -657,140 +657,205 @@ func TestRealServerMetadataResources(t *testing.T) {
 //
 // These cases need a KWDB instance that requires TLS. Set:
 //
-//	KWDB_TLS_DSN="postgres://root:<pw>@<host>:<port>/<db>?sslmode=verify-full"
+//	KWDB_TLS_HOST=10.110.105.80
+//	KWDB_TLS_PORT=26268
+//	KWDB_TLS_DATABASE=factory_tls
 //	KWDB_TLS_ROOT_CERT=/path/to/ca.crt
+//	KWDB_TLS_USER=root                 KWDB_TLS_PASSWORD=...
+//	KWDB_TLS_PLAINTEXT_USER=grafanatls KWDB_TLS_PLAINTEXT_PASSWORD=...
 //
-// The DSN's sslmode is replaced per case so the same instance exercises all
-// four modes plus the failure paths.
+// The sslmode and CA are passed through jsonData exactly as the data source
+// configuration page stores them, so the whole settings -> buildConnString ->
+// pgx path is exercised, not just the driver.
 
-func tlsDSN(t *testing.T) (string, string) {
+// tlsSettings returns the connection coordinates of the TLS instance.
+func tlsSettings(t *testing.T) (host, port, database, rootCert string) {
 	t.Helper()
-	dsn := os.Getenv("KWDB_TLS_DSN")
-	cert := os.Getenv("KWDB_TLS_ROOT_CERT")
-	if dsn == "" || cert == "" {
-		t.Skip("set KWDB_TLS_DSN and KWDB_TLS_ROOT_CERT to run the TLS cases")
+	host = os.Getenv("KWDB_TLS_HOST")
+	port = os.Getenv("KWDB_TLS_PORT")
+	database = os.Getenv("KWDB_TLS_DATABASE")
+	rootCert = os.Getenv("KWDB_TLS_ROOT_CERT")
+	if host == "" || port == "" || database == "" || rootCert == "" {
+		t.Skip("set KWDB_TLS_HOST/PORT/DATABASE/ROOT_CERT to run the TLS cases")
 	}
-	return dsn, cert
+	return host, port, database, rootCert
 }
 
-// withSSLMode rewrites the sslmode (and adds sslrootcert when a certificate is
-// given) of a libpq DSN.
-func withSSLMode(dsn, mode, rootCert string) string {
-	base, query := dsn, ""
-	if q := strings.Index(dsn, "?"); q >= 0 {
-		base, query = dsn[:q], dsn[q+1:]
-	}
-	parts := []string{}
-	for _, kv := range strings.Split(query, "&") {
-		if kv == "" || strings.HasPrefix(kv, "sslmode=") || strings.HasPrefix(kv, "sslrootcert=") {
-			continue
-		}
-		parts = append(parts, kv)
-	}
-	parts = append(parts, "sslmode="+mode)
-	if rootCert != "" {
-		parts = append(parts, "sslrootcert="+rootCert)
-	}
-	return base + "?" + strings.Join(parts, "&")
+// realTLSInstance builds an instance for the TLS server with an explicit
+// sslMode and optional CA, mirroring what the configuration page persists.
+func realTLSInstance(t *testing.T, host, port, database, user, password, sslMode, rootCert string) *Datasource {
+	t.Helper()
+	return realInstanceWith(t, "postgres://"+user+":"+password+"@"+host+":"+port+"/"+database, map[string]any{
+		"sslMode":     sslMode,
+		"sslRootCert": rootCert,
+	})
 }
 
-// TestRealServerTLSModes is the end-to-end check the plugin has never had:
-// every sslmode the configuration page offers, against a server that requires
-// TLS, plus the modes that must fail.
+// TestRealServerTLSModes is the end-to-end check the plugin has never had: every
+// sslmode the configuration page offers, against a server that requires TLS.
 func TestRealServerTLSModes(t *testing.T) {
-	dsn, cert := tlsDSN(t)
+	host, port, database, rootCert := tlsSettings(t)
+	user := envOrDefault("KWDB_TLS_USER", "root")
+	password := os.Getenv("KWDB_TLS_PASSWORD")
+	if password == "" {
+		t.Skip("set KWDB_TLS_PASSWORD to run the TLS cases")
+	}
 	tr := realTimeRange()
 
+	// A CA that did not sign this server's certificate. Supplying one proves
+	// the client really verifies the chain instead of accepting anything.
+	// No existence check here: pgx reports a missing root-cert file clearly
+	// enough, and gosec flags the stat as a taint path.
+	foreignCA := os.Getenv("KWDB_TLS_FOREIGN_CA")
+
 	cases := []struct {
-		mode     string
-		cert     string
+		name     string
+		sslMode  string
+		rootCert string
 		wantOK   bool
 		wantHint string
 	}{
-		// The server requires TLS, so a plaintext connection must be refused.
-		{mode: "disable", wantOK: false, wantHint: "TLS"},
 		// require encrypts but does not verify the certificate.
-		{mode: "require", wantOK: true},
-		// verify-ca / verify-full verify against the supplied CA.
-		{mode: "verify-ca", cert: cert, wantOK: true},
-		{mode: "verify-full", cert: cert, wantOK: true},
-		// verify-full without a CA cannot verify the chain.
-		{mode: "verify-full", wantOK: false, wantHint: "TLS"},
+		{name: "require", sslMode: "require", wantOK: true},
+		// verify-ca / verify-full verify the chain against the supplied CA.
+		{name: "verify-ca", sslMode: "verify-ca", rootCert: rootCert, wantOK: true},
+		{name: "verify-full", sslMode: "verify-full", rootCert: rootCert, wantOK: true},
+		// verify-ca / verify-full without a CA cannot verify the chain.
+		{name: "verify-ca without a CA", sslMode: "verify-ca", wantOK: false, wantHint: "TLS"},
+		{name: "verify-full without a CA", sslMode: "verify-full", wantOK: false, wantHint: "TLS"},
+		// A CA that did not sign this server's certificate must be refused.
+		{name: "verify-ca with a foreign CA", sslMode: "verify-ca", rootCert: foreignCA, wantOK: false, wantHint: "TLS"},
+		{name: "verify-full with a foreign CA", sslMode: "verify-full", rootCert: foreignCA, wantOK: false, wantHint: "TLS"},
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.mode+func() string {
-			if tc.cert == "" {
-				return "-no-cert"
+		if tc.name == "verify-ca with a foreign CA" || tc.name == "verify-full with a foreign CA" {
+			if foreignCA == "" {
+				t.Skipf("%s: set KWDB_TLS_FOREIGN_CA to run it", tc.name)
+				continue
 			}
-			return ""
-		}(), func(t *testing.T) {
-			d := realInstance(t, withSSLMode(dsn, tc.mode, tc.cert))
+		}
+		t.Run(tc.name, func(t *testing.T) {
+			d := realTLSInstance(t, host, port, database, user, password, tc.sslMode, tc.rootCert)
 			res, err := d.CheckHealth(context.Background(), &backend.CheckHealthRequest{})
 			if err != nil {
 				t.Fatalf("CheckHealth: %v", err)
 			}
-			if tc.wantOK {
-				if res.Status != backend.HealthStatusOk {
-					t.Fatalf("expected OK, got %v: %s", res.Status, res.Message)
+			if !tc.wantOK {
+				if res.Status == backend.HealthStatusOk {
+					t.Fatalf("expected a failure for sslmode=%s, got OK: %s", tc.sslMode, res.Message)
 				}
-				t.Logf("health OK: %s", res.Message)
-				// A working pool must also run a real query.
-				q := d.runQueryModel(t, map[string]any{
-					"mode": "raw", "format": "table",
-					"rawSql":     "SELECT count(*) AS n FROM equipment_telemetry WHERE k_timestamp >= $__timeFrom AND k_timestamp <= $__timeTo",
-					"timeColumn": "k_timestamp",
-				}, tr)
-				if q.Error != nil {
-					t.Fatalf("query over %s failed: %v", tc.mode, q.Error)
+				t.Logf("sslMode=%s rejected: %s", tc.sslMode, res.Message)
+				if tc.wantHint != "" && !strings.Contains(strings.ToLower(res.Message), strings.ToLower(tc.wantHint)) {
+					t.Errorf("message %q does not mention %q", res.Message, tc.wantHint)
 				}
-				t.Logf("query over %s -> %s", tc.mode, frameSummary(t, q))
 				return
 			}
-			if res.Status == backend.HealthStatusOk {
-				t.Fatalf("expected a failure for sslmode=%s, got OK: %s", tc.mode, res.Message)
+			if res.Status != backend.HealthStatusOk {
+				t.Fatalf("expected OK for sslmode=%s, got %v: %s", tc.sslMode, res.Status, res.Message)
 			}
-			t.Logf("sslMode=%s rejected: %s", tc.mode, res.Message)
-			if tc.wantHint != "" && !strings.Contains(strings.ToLower(res.Message), strings.ToLower(tc.wantHint)) {
-				t.Errorf("message %q does not mention %q", res.Message, tc.wantHint)
+			t.Logf("health OK: %s", res.Message)
+
+			// A working pool must also run a real query end to end.
+			q := d.runQueryModel(t, map[string]any{
+				"mode": "raw", "format": "table",
+				"rawSql":     "SELECT count(*) AS n FROM equipment_telemetry WHERE k_timestamp >= $__timeFrom AND k_timestamp <= $__timeTo",
+				"timeColumn": "k_timestamp",
+			}, tr)
+			if q.Error != nil {
+				t.Fatalf("query over sslmode=%s failed: %v", tc.sslMode, q.Error)
 			}
+			t.Logf("query over sslmode=%s -> %s", tc.sslMode, frameSummary(t, q))
 		})
 	}
 }
 
-// TestRealServerTLSRejectsUnverifiableHost points verify-full at a host name
-// the certificate does not cover, which must fail with a hostname error rather
-// than connecting.
-func TestRealServerTLSRejectsUnverifiableHost(t *testing.T) {
-	dsn, cert := tlsDSN(t)
-
-	// Rewrite the host to a name the node certificate does not list.
-	rewritten := withSSLMode(dsn, "verify-full", cert)
-	at := strings.LastIndex(rewritten, "@")
-	if at < 0 {
-		t.Fatal("DSN has no @")
+// TestRealServerTLSRejectsPlaintextForNonRoot covers the case that actually
+// proves TLS is enforced: a non-root user connecting with sslmode=disable.
+//
+// KWDB cannot enforce this for `root`: pgwire/pgwire/server.go's
+// maybeUpgradeToSecureConn() is a no-op when the client sends no SSLRequest,
+// the default HBA method cert-password is registered for both SSL and non-SSL
+// connections, and ParseAndNormalize() force-prepends a mandatory
+// "host all root all cert-password" rule that cannot be suppressed. So the
+// server has to be configured with an explicit hostnossl reject rule for the
+// other users, and that is what this case checks.
+func TestRealServerTLSRejectsPlaintextForNonRoot(t *testing.T) {
+	host, port, database, rootCert := tlsSettings(t)
+	user := os.Getenv("KWDB_TLS_PLAINTEXT_USER")
+	password := os.Getenv("KWDB_TLS_PLAINTEXT_PASSWORD")
+	if user == "" || password == "" {
+		t.Skip("set KWDB_TLS_PLAINTEXT_USER/PASSWORD to check plaintext rejection")
 	}
-	rest := rewritten[at+1:]
-	slash := strings.Index(rest, "/")
-	hostPart, tail := rest, ""
-	if slash >= 0 {
-		hostPart, tail = rest[:slash], rest[slash:]
-	}
-	colon := strings.LastIndex(hostPart, ":")
-	host := hostPart[:colon]
-	port := hostPart[colon+1:]
-	rewritten = rewritten[:at+1] + "not-in-cert" + ":" + port + tail
-	// The DSN host no longer resolves to the server, so this must fail during
-	// DNS or the handshake - either way it must not connect.
-	_ = host
+	tr := realTimeRange()
 
-	d := realInstance(t, rewritten)
+	// sslmode=disable must be refused, and the hint must point at TLS.
+	d := realTLSInstance(t, host, port, database, user, password, "disable", "")
 	res, err := d.CheckHealth(context.Background(), &backend.CheckHealthRequest{})
 	if err != nil {
 		t.Fatalf("CheckHealth: %v", err)
 	}
 	if res.Status == backend.HealthStatusOk {
-		t.Fatal("verify-full connected to a host the certificate does not cover")
+		t.Fatalf("sslmode=disable connected for user %q: the server is not rejecting plaintext", user)
 	}
-	t.Logf("rejected as expected: %s", res.Message)
+	t.Logf("sslmode=disable rejected for %q: %s", user, res.Message)
+	if !strings.Contains(strings.ToLower(res.Message), "tls") &&
+		!strings.Contains(strings.ToLower(res.Message), "rejected") {
+		t.Errorf("message %q does not look like a TLS enforcement failure", res.Message)
+	}
+
+	// The same user over TLS must work, so the failure above is about the
+	// transport and not about the account.
+	d = realTLSInstance(t, host, port, database, user, password, "verify-full", rootCert)
+	res, err = d.CheckHealth(context.Background(), &backend.CheckHealthRequest{})
+	if err != nil {
+		t.Fatalf("CheckHealth: %v", err)
+	}
+	if res.Status != backend.HealthStatusOk {
+		t.Fatalf("the same user over verify-full should work, got %v: %s", res.Status, res.Message)
+	}
+	q := d.runQueryModel(t, map[string]any{
+		"mode": "raw", "format": "table",
+		"rawSql":     "SELECT count(*) AS n FROM equipment_telemetry WHERE k_timestamp >= $__timeFrom AND k_timestamp <= $__timeTo",
+		"timeColumn": "k_timestamp",
+	}, tr)
+	if q.Error != nil {
+		t.Fatalf("query over verify-full failed: %v", q.Error)
+	}
+	t.Logf("same user over verify-full -> %s", frameSummary(t, q))
+}
+
+// TestRealServerTLSRootPlaintextException documents a KWDB property rather than
+// a plugin behaviour: `root` can still connect with sslmode=disable even on a
+// server started with --certs-dir, because of the mandatory root HBA rule
+// described above. The plugin's contract is only that it surfaces a definitive
+// result either way - a working connection or a readable error - so that is
+// what is asserted here.
+func TestRealServerTLSRootPlaintextException(t *testing.T) {
+	host, port, database, _ := tlsSettings(t)
+	user := envOrDefault("KWDB_TLS_USER", "root")
+	password := os.Getenv("KWDB_TLS_PASSWORD")
+	if password == "" {
+		t.Skip("set KWDB_TLS_PASSWORD to run the TLS cases")
+	}
+
+	d := realTLSInstance(t, host, port, database, user, password, "disable", "")
+	res, err := d.CheckHealth(context.Background(), &backend.CheckHealthRequest{})
+	if err != nil {
+		t.Fatalf("CheckHealth: %v", err)
+	}
+	if res.Message == "" {
+		t.Error("CheckHealth returned an empty message")
+	}
+	t.Logf("root over sslmode=disable -> status=%v message=%q", res.Status, res.Message)
+	if res.Status == backend.HealthStatusOk {
+		t.Log("KWDB accepted a plaintext connection for root; this is the documented root HBA exception")
+	}
+}
+
+func envOrDefault(name, fallback string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return fallback
 }

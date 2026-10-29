@@ -49,3 +49,6 @@ ci/
 .DS_Store
 
 .eslintcache
+
+# Throwaway certificates for the TLS verification harness (contain a private key)
+verify-real/tls/

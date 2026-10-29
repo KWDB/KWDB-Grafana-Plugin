@@ -1,7 +1,8 @@
 # 真实 KWDB 实例全功能验证报告
 
 - 日期：2026-10-29
-- 目标实例：KWDB `10.110.105.80:26267`，数据库 `factory`（TIME SERIES 类型），用户 `root`
+- 目标实例一（主验证）：KWDB `10.110.105.80:26267`，数据库 `factory`（TIME SERIES 类型），用户 `root`
+- 目标实例二（TLS 专项）：KWDB `10.110.105.80:26268`，数据库 `factory_tls`，用户 `root` / `grafanatls`，`--certs-dir` 模式启动，无 `--insecure`
 - 版本：`KaiwuDB CCLV3.3.0-dev30-10-gca756f2085-dirty (x86_64-linux-gnu, built 2026/09/15, go1.24.3)`
 - 验证对象：`fix/code-quality-hardening` 分支（含本轮 3 个真实缺陷修复），前端 `dist/module.js` 与后端 `gpx_*` 均为修复后重新构建
 - Grafana：本地 `docker compose` 容器 `kaiwudb-kwdbtsdb-datasource`，grafana-enterprise 13.1.0，数据源 `kwdb-tsdb` 已指向 `10.110.105.80:26267/factory`
@@ -162,15 +163,88 @@ SELECT 'range: (ts >= '2026-10-27 00:00:00'::TIMESTAMP AND ts <= ...)' AS note
 
 **这意味着 `plugin.json` 里声明的 `alerting`、`annotations`、`queryOptions` 三项能力都有真机证据了。**
 
-## 六、仍未验证 / 需要后续处理
+## 六、TLS 专项验证（实例二：26268）
 
-1. **TLS（`verify-ca` / `verify-full`）**：该实例 26267 是明文端口，`health.go` 里的 TLS 错误分类、`sslRootCert` 透传、`settings.go` 的 sslMode 白名单都只有单元测试。要补这一项，需要一个开 TLS 的 KWDB 实例和对应 CA 证书。
-2. **认证/库名不存在的提示**：该实例 trust 认证，任意密码和任意库名都放行，`28P01`/`3D000` 两条提示路径无法在真机触发。
-3. **`last` 与 `last_row` 的空值语义**：文档说两者都取最大时间戳那一行，区别只在 `last` 排除 NULL、`last_row` 包含 NULL。`equipment_telemetry` 的 `current_val` 是 `NOT NULL`，真机上两者结果一致，无法观测差异。当指标列可空且末行为 NULL 时，`last(col)` 会退回更早的非空行，而 `last(k_timestamp)` 仍取真正的末行时间戳——两者可能不一致。**建议后续用可空列专门验一次**，必要时让时间列函数跟随 `latestFunc` 的空值语义。
-4. **`EVENT_WINDOW` 结束条件不可达时静默返回空**：与本地文档（3.2.1）描述不符。建议在编辑器 placeholder 或文档里明示"结束条件必须可达"。
-5. **降采样选 `none` 行数爆炸**：见缺陷 1 的遗留观察。
-6. **`splitByTag` 只在 Table 格式下生效**：默认 time_series 格式下 `LongToWide` 已经按 tag 产出多个字段，语义上是自洽的，但 `types.ts` 里"default true"的注释容易让人以为它总是生效。建议在字段注释里写清。
-7. **窗口区间下限**：文档要求 `TIME_WINDOW` 区间 ≥ 10ms 且只支持 ms~year（不支持 ns/us），`SESSION_WINDOW` 阈值只支持 s/m/h/d/w。插件编辑器未做校验，用户填 `500us` 会拿到数据库报错。可作为后续增强。
+为补上唯一的空白链路，在 `10.110.105.80:26268` 另起了一个要求 TLS 的 KWDB 实例：
+
+```
+./kwbase start-single-node \
+  --certs-dir=/home/sunluming/kwdb-tls/certs \
+  --listen-addr=10.110.105.80:26268 --advertise-addr=10.110.105.80:26268 \
+  --brpc-addr=:27268 --http-addr=:18099 \
+  --store=/home/sunluming/kwdb-tls/data
+```
+
+数据：`factory_tls.equipment_telemetry`，60,000 行 / 3.47 天 / 4 个设备，`current_val` 8–68（>60 的 9,180 行、<20 的 12,256 行，`EVENT_WINDOW` 可产出结果），`voltage` 170–225，~20% 空值。表结构与实例一一致，e2e 配置无需改结构。
+
+### 结果
+
+| 用例                                          | 结果                                                      |
+| --------------------------------------------- | --------------------------------------------------------- |
+| `require`                                     | 通过，健康检查 OK，真实查询返回行                         |
+| `verify-ca` + `sslrootcert=ca.crt`            | 通过，健康检查 OK，真实查询返回行                         |
+| `verify-full` + `sslrootcert=ca.crt`          | 通过，健康检查 OK，真实查询返回行                         |
+| `verify-ca` / `verify-full` **不提供** CA     | 正确拒绝，插件给出 TLS 提示                               |
+| `verify-ca` / `verify-full` 提供**错误**的 CA | 正确拒绝，`x509: certificate signed by unknown authority` |
+| 非 root 用户 `sslmode=disable`                | 正确拒绝，`authentication rejected by configuration`      |
+| 同一个非 root 用户走 `verify-full`            | 通过，证明上一条拒绝的是传输层而非账号本身                |
+| 错误密码 / 错误 CA                            | 正确拒绝                                                  |
+
+也就是说：**`healthHint` 的 TLS 分类、`sslRootCert` 透传、`settings.Validate()` 的 sslMode 白名单，现在都有端到端证据了。**
+
+### KWDB 的一个固有行为：`root` 拒绝不了明文
+
+`root` 用户即使连 `--certs-dir` 启动的实例，`sslmode=disable` 也能连上。这不是配置疏漏，是 KWDB 的三层叠加：
+
+1. `pkg/sql/pgwire/server.go` 的 `maybeUpgradeToSecureConn()` 在客户端不发 SSLRequest 时是空操作——安全模式不在协议层强制 TLS；
+2. 默认 HBA 方法 `cert-password` 注册在 `hba.ConnAny`（SSL 和非 SSL 都有效），且 `authCertPassword()` 在没有对等证书时静默退回纯密码认证；
+3. `ParseAndNormalizer()` 会强制前置一条不可抑制的 `host all root all cert-password` 规则。
+
+**缓解措施**（已设置并持久化）：给其他用户显式拒绝非 TLS——
+
+```sql
+SET CLUSTER SETTING server.host_based_authentication.configuration =
+'hostssl   all all all all cert-password
+ hostnossl all all all all reject';
+```
+
+用一个临时用户验证过：`disable` → 拒绝，`require` → 通过。
+
+**对使用方的含义**：KWDB 上要用 TLS 生效，数据源不能配 `root`，得用一个受 HBA 约束的普通账号。这一点值得写进 README 的 Troubleshooting。
+
+### 一个容易误判的错误信息
+
+`verify-ca`/`verify-full` **不提供** CA 时，macOS 上看到的是：
+
+```
+x509: "node" certificate is not standards compliant
+```
+
+这句话不是 Go 的 `crypto/x509` 报的（Go 源码里搜不到），也不是 KWDB 的——是 **macOS Security framework** 的措辞。只有走系统根证书池时才会经过它；提供了 `sslrootcert` 就用 Go 自己的校验，报的是正常的 `certificate signed by unknown authority`。在 Linux 上（Grafana 插件的典型运行环境）这个路径的措辞又会不同。**插件在这里的价值正是给了一句人话提示**，否则用户看到"not standards compliant"会以为是证书坏了。
+
+### 本地文档与部署二进制不一致（均已实测确认）
+
+| #   | 文档说的                                    | 二进制实际                                                                                                                                                                                                                |
+| --- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `CREATE DATABASE x` 建时序库                | 报 `can not create timeseries table in relational database`，必须 `CREATE TS DATABASE x`                                                                                                                                  |
+| 2   | `TRUNCATE` 清空时序表                       | 不支持，用 `DELETE FROM`                                                                                                                                                                                                  |
+| 3   | HBA 配置 5 个字段                           | 需要 **6** 个字段（多一个 `TIME`），文档里所有 5 字段写法都解析失败；且本地 `kwdb/` 源码的 `hba/parser.go` 里没有"时间规格"这个字段，**本地源码与部署的二进制不是同一版本**（二进制 `V3.3.0-dev30-10-gca756f2085-dirty`） |
+| 4   | 节点证书 SAN 用 IP 即可                     | libpq 的 `verify-full` 连 IP 主机需要 **DNS** SAN——OpenSSL 的 `X509_check_host()` 不匹配 IP SAN；Go/pgx 原生支持 IP SAN 所以没这个问题。已重新签发 `node.crt` 补上 `DNS:10.110.105.80`                                    |
+| 5   | skills 文档把 `EVENT_WINDOW` 放 SELECT 列表 | 必须放 `GROUP BY` 且分组列在前（`GROUP BY device_id, EVENT_WINDOW(...)`）；放 SELECT 列表或嵌进子查询都会被拒                                                                                                             |
+| 6   | 通用示例的 `time_bucket('interval', ts)`    | 必须 `time_bucket(ts, 'interval')`，反了报 `unknown signature`                                                                                                                                                            |
+| 7   | `pg_stat_ssl` 可查 SSL 状态                 | 未实现，无法从 SQL 确认                                                                                                                                                                                                   |
+
+第 3 条和第 5 条对插件开发影响最大：HBA 语法按文档写必然失败，`EVENT_WINDOW` 的示例位置是错的（本插件的实现是对的）。
+
+## 七、仍未验证 / 需要后续处理
+
+1. **认证失败提示**：实例一（26267）trust 认证，任意密码、任意库名都放行，`28P01`/`3D000` 两条提示路径无法在真机触发；实例二虽然能构造错误密码，但那是密码错误而非认证配置错误，覆盖不到同两条路径。**只做了单元测试。**
+2. **`last` 与 `last_row` 的空值语义**：文档称两者都取最大时间戳行、只在空值处理上有差异（`last` 排 NULL，`last_row` 含 NULL）。两个实例的 `current_val` 都是 `NOT NULL`，观测不到差异。可空列末行为 NULL 时，`last(col)` 会退回更早的非空行，而 `last(k_timestamp)` 仍取真正的末行时间戳——两者可能不一致。**建议后续用可空列专项验证**，必要时让时间列函数跟随 `latestFunc` 的空值语义。
+3. **`EVENT_WINDOW` 结束条件不可达时静默返回 0 行**：与本地 3.2.1 文档"未闭合窗口自动完成"不符（本地没有 3.3.0 文档集）。是 KWDB 行为，不是插件缺陷，但用户侧该知道：结束条件必须可达。
+4. **降采样选 `none` 行数膨胀**：6 小时窗口产出 32,136 行（而非 72 行）。SQL 合法但图表会被打爆；建议后续从降采样移除 `none` 或改名"原始值"并配提示。
+5. **`splitByTag` 只在 Table 格式下生效**：默认 time_series 格式下 `LongToWide` 已按 tag 产出多字段，语义自洽，但 `types.ts` 里"default true"的注释容易让人以为它总生效。建议在字段注释里写清。
+6. **窗口区间格式校验**：文档要求 `TIME_WINDOW` 区间 ≥ 10ms 且只支持 ms~year（不支持 ns/us），`SESSION_WINDOW` 阈值只支持 s/m/h/d/w。编辑器未校验，用户填 `500us` 会拿到数据库报错。
+7. **KWDB 上 TLS 生效需要非 root 账号**：见第六节，建议写进 README Troubleshooting。
 
 ## 七、复现方式
 
@@ -194,4 +268,19 @@ KWDB_E2E_METRIC=current_val \
 GRAFANA_URL=http://localhost:3001 npx playwright test --reporter=line
 ```
 
-`verify-real/` 与 `realserver_verify_test.go` 是本轮新增的验证设施，默认不跑（无 DSN 时跳过），不参与插件构建，不影响 `mage buildAll` 产物。
+`verify-real/` 与 `realserver_verify_test.go` 是本轮新增的验证设施，默认不跑（无对应环境变量时跳过），不参与插件构建，不影响 `mage buildAll` 产物。
+
+### 实例二（TLS）的跑法
+
+```bash
+C=$PWD/verify-real/tls/ca.crt
+KWDB_TLS_HOST=10.110.105.80 KWDB_TLS_PORT=26268 KWDB_TLS_DATABASE=factory_tls \
+KWDB_TLS_ROOT_CERT=$C KWDB_TLS_FOREIGN_CA=/path/to/foreign-ca.crt \
+KWDB_TLS_USER=root KWDB_TLS_PASSWORD='...' \
+KWDB_TLS_PLAINTEXT_USER=grafanatls KWDB_TLS_PLAINTEXT_PASSWORD='...' \
+  go test ./pkg/plugin/ -run TestRealServerTLS -v
+```
+
+`KWDB_TLS_FOREIGN_CA` 指向任何一个**没有**签发该节点证书的 CA，用来证明客户端真的在校验证书链；不设置则那两个用例 skip。
+
+`verify-real/tls/` 下是本项目专用的一次性测试证书（`ca.crt` / `client.root.crt` / `client.root.key`），**不是生产密钥**，只为这次验证生成。`grafanatls` 是为验证明文拒绝而建的专用账号。

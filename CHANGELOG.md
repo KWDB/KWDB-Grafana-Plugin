@@ -32,11 +32,15 @@ were reachable with the mock-based unit tests or the CI container dataset.
 
 ### Documentation
 
-- `docs/real-server-verification-2026-10-29.md` records the first end-to-end
-  run against a live KWDB instance (`10.110.105.80:26267/factory`,
-  `equipment_telemetry`, 1,002,988 rows): 56 generated SQL statements, the Go
-  backend pipeline, 21/21 Playwright specs and the alerting path. It also lists
-  what is still unverified, TLS above all.
+- `docs/real-server-verification-2026-10-29.md` records the end-to-end runs
+  against live KWDB instances. Instance one (`10.110.105.80:26267/factory`,
+  `equipment_telemetry`, 1,002,988 rows) covers 56 generated SQL statements,
+  the Go backend pipeline, 21/21 Playwright specs and the alerting path.
+  Instance two (`10.110.105.80:26268/factory_tls`, started with `--certs-dir`)
+  closes the TLS gap: all four sslmodes, a foreign CA, and plaintext rejection
+  for a non-root user. It also documents that KWDB cannot reject plaintext for
+  `root`, and seven places where the local docs disagree with the deployed
+  binary.
 
 ## v1.2.3 (2026-10-28)
 

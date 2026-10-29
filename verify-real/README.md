@@ -35,3 +35,28 @@ npx ts-node --compiler-options '{"module":"commonjs","moduleResolution":"node","
 
 2026-10-29 对 `10.110.105.80:26267/factory`：56 条中 51 条通过、0 失败、4 条按设计空串、1 条按设计被拒。
 完整报告见 `../docs/real-server-verification-2026-10-29.md`。
+
+## TLS 验证用的证书
+
+`verify-real/tls/` 存放指向 TLS 实例所需的证书，**已被 .gitignore 忽略，不要提交**——里面含私钥，即使是一次性测试密钥也不该进仓库。
+
+需要时把这三个文件放进去：
+
+| 文件 | 用途 |
+| --- | --- |
+| `ca.crt` | `KWDB_TLS_ROOT_CERT`，`verify-ca`/`verify-full` 用 |
+| `client.root.crt` / `client.root.key` | 可选的客户端证书认证 |
+
+另需一个**没有**签发该节点证书的 CA 作为 `KWDB_TLS_FOREIGN_CA`，用来证明客户端真的在校验证书链。
+
+生成方式（在 KWDB 服务器上，`kwbase` 即 `kwbase cert` 一族命令）：
+
+```bash
+kwbase cert create-ca     --certs-dir=<dir> --ca-key=<dir>/ca.key
+kwbase cert create-node   --certs-dir=<dir> --host=<ip>,localhost
+kwbase cert create-client root --certs-dir=<dir> --ca-key=<dir>/ca.key
+```
+
+注意 `create-node` 的 `--host` 要带 **DNS 名**：libpq 的 `verify-full` 连 IP 主机时，OpenSSL 的 `X509_check_host()` 不匹配 IP SAN，只给 IP 会报 `certificate for "localhost" does not match host name`。Go/pgx 原生支持 IP SAN，不受影响。
+
+完整结论见 `../docs/real-server-verification-2026-10-29.md` 第六节。
