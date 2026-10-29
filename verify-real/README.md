@@ -36,12 +36,12 @@ npx ts-node --compiler-options '{"module":"commonjs","moduleResolution":"node","
 
 - `ok` — 执行成功
 - `FAIL` — 执行失败，需要看错误
-- `xfail` — 按设计被 KWDB 拒绝（历史用例；当前 SQL builder 已把 gapfill 的 `none` 纠正为 `avg`）
+- `xfail` — 按设计被 KWDB 拒绝（本轮重跑没有此类用例；legacy gapfill `none` 已被纠正为 `avg`）
 - `----` — 构建器按设计返回空串（危险片段、非正整数 COUNT_WINDOW 参数）
 
 ## 记录结果
 
-2026-10-29 对一台真实 KWDB 实例（修复前代码）：56 条中 51 条通过、0 失败、4 条按设计空串、1 条按设计被拒（`WN-gapfill-agg-none`）。后续修复已在 SQL 层把 gapfill 的 `none` 纠正为 `avg`，该用例重跑后预期从 `xfail` 变为通过；实际结果以重跑为准。
+2026-10-29 对一台真实 KWDB 实例重跑：56 条中 52 条通过、0 失败、4 条按设计返回空串、0 条按设计失败。legacy gapfill 的 `none` 已在 SQL 层纠正为 `avg`，`WN-gapfill-agg-none` 通过。
 完整报告（地址与账号已脱敏）见 `../docs/real-server-verification-2026-10-29.md`。
 
 ## TLS 验证用的证书

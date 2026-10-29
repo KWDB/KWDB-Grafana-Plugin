@@ -61,6 +61,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Test backend
+        run: go test ./pkg/...
+
+      - name: Scan backend dependencies for known vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          "$(go env GOPATH)/bin/govulncheck" ./pkg/...
+
       - name: Build backend binaries
         uses: magefile/mage-action@a662bd8c29d8106879588cfff83b2faf6e6f59db # v4.0.0
         with:

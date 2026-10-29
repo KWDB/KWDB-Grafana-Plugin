@@ -85,16 +85,13 @@ jobs:
         if: steps.check-for-backend.outputs.has-backend == 'true'
         run: go test ./pkg/...
 
-      # Non-blocking on purpose: go.mod pins Go 1.26.5 and govulncheck reports
-      # two standard-library advisories that are fixed in newer Go patch
-      # releases (net/http GO-2026-6617 fixed in 1.26.9, crypto/x509
-      # GO-2026-6809 fixed in 1.26.10). Bump the Go toolchain in go.mod to
-      # 1.26.9+ and then remove continue-on-error so this scan blocks again.
+      # Blocking again after the Go toolchain and x/net upgrades (go.mod now
+      # requires Go 1.26.10 and golang.org/x/net v0.60.0). Keep the tool version
+      # pinned so a new govulncheck release cannot change the gate silently.
       - name: Scan backend dependencies for known vulnerabilities
         if: steps.check-for-backend.outputs.has-backend == 'true'
-        continue-on-error: true
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           "$(go env GOPATH)/bin/govulncheck" ./pkg/...
 
       - name: Check for E2E

@@ -48,6 +48,9 @@ function assertExecutable(sql: string, id: string): string {
 }
 
 const TABLE = 'equipment_telemetry';
+// The database is configurable so the same harness can run against the demo
+// database or a real instance; it defaults to the public example name.
+const DATABASE = process.env.KWDB_DATABASE ?? 'example_db';
 
 const base: KwdbQuery = {
   refId: 'A',
@@ -105,9 +108,9 @@ add('DS-07', 'downsampling/agg-none-alias', 'column AS alias + GROUP BY', {
   ...base,
   metrics: [{ column: 'current_val', aggregation: 'none', alias: 'amps' }],
 });
-add('DS-08', 'downsampling/qualified-table', '"example_db"."equipment_telemetry"', {
+add('DS-08', 'downsampling/qualified-table', `"${DATABASE}"."equipment_telemetry"`, {
   ...base,
-  table: 'example_db.equipment_telemetry',
+  table: `${DATABASE}.equipment_telemetry`,
 });
 add('DS-09', 'downsampling/nullable-column', 'temperature is NULL-able', {
   ...base,
@@ -332,8 +335,8 @@ const rawCases: Array<[string, string, string]> = [
     'SELECT k_timestamp, device_id, current_val FROM equipment_telemetry ORDER BY k_timestamp LIMIT 50',
   ],
   ['RAW-03', 'raw/aggregate', 'SELECT count(*), avg(current_val) FROM equipment_telemetry'],
-  ['RAW-04', 'raw/show-tables', 'SHOW TABLES FROM example_db'],
-  ['RAW-05', 'raw/show-create', 'SHOW CREATE TABLE example_db.equipment_telemetry'],
+  ['RAW-04', 'raw/show-tables', `SHOW TABLES FROM ${DATABASE}`],
+  ['RAW-05', 'raw/show-create', `SHOW CREATE TABLE ${DATABASE}.equipment_telemetry`],
   [
     'RAW-06',
     'raw/with-cte',
@@ -391,15 +394,15 @@ const varRejectResults = varRejects.map((raw) => {
 
 // The actual SQL the backend runs for each variable query type.
 const varSql: Array<{ id: string; sql: string }> = [
-  { id: 'VQ-tables', sql: 'SHOW TABLES FROM "example_db"' },
-  { id: 'VQ-columns', sql: 'SHOW CREATE TABLE "example_db"."equipment_telemetry"' },
+  { id: 'VQ-tables', sql: `SHOW TABLES FROM "${DATABASE}"` },
+  { id: 'VQ-columns', sql: `SHOW CREATE TABLE "${DATABASE}"."equipment_telemetry"` },
   {
     id: 'VQ-tag-values',
-    sql: 'SELECT DISTINCT "device_id" FROM "example_db"."equipment_telemetry" ORDER BY "device_id" LIMIT 10000',
+    sql: `SELECT DISTINCT "device_id" FROM "${DATABASE}"."equipment_telemetry" ORDER BY "device_id" LIMIT 10000`,
   },
   {
     id: 'VQ-tag-values-multi',
-    sql: 'SELECT DISTINCT "workshop_id" FROM "example_db"."equipment_telemetry" ORDER BY "workshop_id" LIMIT 10000',
+    sql: `SELECT DISTINCT "workshop_id" FROM "${DATABASE}"."equipment_telemetry" ORDER BY "workshop_id" LIMIT 10000`,
   },
 ];
 

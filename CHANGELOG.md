@@ -88,6 +88,10 @@
   and `COUNT_WINDOW` limits must be positive integers.
 - `sslmode` values that pgx would silently downgrade to a plaintext connection
   (`allow`, `prefer`) are rejected.
+- The Go toolchain baseline is now 1.26.10 and `golang.org/x/net` is upgraded to
+  v0.60.0, clearing the standard-library and HTTP/2 advisories reported by
+  `govulncheck`; the dependency scan is blocking in CI and in the release
+  workflow again.
 
 ## v1.2.2 (2026-10-27)
 

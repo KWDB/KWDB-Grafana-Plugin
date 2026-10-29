@@ -93,18 +93,18 @@ SELECT 'range: (ts >= '2026-10-27 00:00:00'::TIMESTAMP AND ts <= ...)' AS note
 
 `verify-real/gen.ts` 用真实源码生成 SQL，`verify-real/run.ts` 逐条执行。
 
-**56 条：51 通过、0 失败、4 条按设计返回空串、1 条按设计被 KWDB 拒绝（当时代码）。** 后续修复把 gapfill 的 `none` 在 SQL 层纠正为 `avg`，该用例重跑后预期从 xfail 变为通过；结果以重跑为准。
+**56 条：52 通过、0 失败、4 条按设计返回空串、0 条按设计失败。** gapfill 的 legacy `none` 已在 SQL 层纠正为 `avg`，重跑后该用例通过。
 
 | 分组         | 条数 | 结果                                                                                                       |
 | ------------ | ---- | ---------------------------------------------------------------------------------------------------------- |
 | 降采样       | 10   | 全通过（含空 interval 回退 `5m`、`1h` 前后空格、限定表名 `example_db.equipment_telemetry`、可空列、`stddev`） |
-| 插值         | 10   | 9 通过 + 1 条当时按设计失败（gapfill + `none`，本轮修复后预期通过）；含 `linear`/`prev`/`next`/`null`/常量、大写 `PREV` 归一化、未知模式回退 `linear`、带 tag |
+| 插值         | 10   | 全通过（含 legacy gapfill + `none` 已纠正为 `avg`、`linear`/`prev`/`next`/`null`/常量、大写 `PREV` 归一化、未知模式回退 `linear`、带 tag） |
 | 最新值       | 7    | 全通过（`last`/`last_row`/`first`/`first_row`、带 tag 分组、别名优先）                                     |
 | 窗口/事件    | 17   | 13 通过 + 4 条按设计返回空串                                                                               |
 | 原始 SQL     | 8    | 全通过（含 `SHOW TABLES`、`SHOW CREATE TABLE`、`WITH` CTE、`EXPLAIN`、`$__timeFrom/$__timeTo`）            |
 | 模板变量 SQL | 4    | 全通过                                                                                                     |
 
-按设计返回空串的 4 条（都在窗口/事件组）：EVENT_WINDOW/STATE_WINDOW 条件里带 `;` 或 `--`、COUNT_WINDOW 行数或滑步非数字。按设计失败的 1 条：gapfill + `none`（见缺陷 1）；本轮修复后该用例应变为通过，需重跑更新。以上数字由 `verify-real/results.json` 汇总得出，该文件是生成物，不随仓库提交。
+按设计返回空串的 4 条（都在窗口/事件组）：EVENT_WINDOW/STATE_WINDOW 条件里带 `;` 或 `--`、COUNT_WINDOW 行数或滑步非正整数。没有按设计失败的用例（legacy gapfill + `none` 已在 SQL 层纠正为 `avg` 并通过）。以上结果由 2026-10-29 的真机重跑汇总，`verify-real/results.json` 是生成物，不随仓库提交。
 
 ### 有文档依据的行为确认
 

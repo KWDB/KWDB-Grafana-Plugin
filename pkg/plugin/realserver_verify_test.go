@@ -320,12 +320,18 @@ func TestRealServerReadOnlyGuard(t *testing.T) {
 	dsn := realDSN(t)
 	d := realInstance(t, dsn)
 	tr := realTimeRange()
+	cfg, _, err := settingsFromDSN(dsn)
+	if err != nil {
+		t.Fatalf("settingsFromDSN: %v", err)
+	}
+	database := quoteIdent(cfg.Database)
+	table := quoteIdent("equipment_telemetry")
 
 	allowed := []string{
 		"SELECT 1",
 		"SELECT count(*) FROM equipment_telemetry",
-		"SHOW TABLES FROM example_db",
-		"SHOW CREATE TABLE example_db.equipment_telemetry",
+		"SHOW TABLES FROM " + database,
+		"SHOW CREATE TABLE " + database + "." + table,
 		"EXPLAIN SELECT 1",
 		"WITH x AS (SELECT 1 AS n) SELECT n FROM x",
 		"SELECT 'insert into t values (1)' AS s",
