@@ -8,7 +8,7 @@
 **Goal:** Initialize the plugin project using the official `@grafana/create-plugin` CLI, get it to compile and load in Grafana.
 
 ### 1.1 Scaffold with create-plugin CLI
-- Ensure Node 22 is active: `PATH=/Users/sunluming/.nvm/versions/node/v22.18.0/bin:$PATH`
+- Ensure Node 22 is active: `PATH=<node-22-bin>:$PATH`
 - Install yarn: `corepack enable && corepack prepare yarn@1.22.22 --activate`
 - Run the create-plugin CLI from the `kwdb-tsdb-datasource` parent directory:
   ```

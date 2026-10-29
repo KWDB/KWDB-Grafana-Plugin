@@ -19,7 +19,7 @@ export function TimeColumnPicker({ columns, value, onChange }: Props) {
       aria-label="Time column"
       options={options}
       value={value ? { label: value, value } : undefined}
-      onChange={(item) => onChange(item.value ?? '')}
+      onChange={(item) => onChange(item?.value ?? '')}
       placeholder="Select time column"
       isClearable
       menuShouldPortal={false}

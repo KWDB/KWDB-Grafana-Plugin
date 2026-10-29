@@ -94,7 +94,9 @@ func RowsToFrames(rows pgx.Rows, opts FrameOptions) ([]*data.Frame, error) {
 
 	if frames := splitLatestFrames(plans, opts); frames != nil {
 		if truncated {
-			applyMaxRowsNotice(frames[0], maxRows)
+			for _, frame := range frames {
+				applyMaxRowsNotice(frame, maxRows)
+			}
 		}
 		return frames, nil
 	}
@@ -188,7 +190,7 @@ func applyMaxRowsNotice(frame *data.Frame, maxRows int) {
 	}
 	frame.Meta.Notices = append(frame.Meta.Notices, data.Notice{
 		Severity: data.NoticeSeverityWarning,
-		Text:     fmt.Sprintf("Query result was truncated at %d rows read (before pivoting into series); add LIMIT or narrow the time range", maxRows),
+		Text:     fmt.Sprintf("Query result was truncated at %d rows read; add LIMIT or narrow the time range to see all data", maxRows),
 	})
 }
 
@@ -516,10 +518,32 @@ func moveTimeFirst(plans []columnPlan, timeIdx int) []columnPlan {
 	return reordered
 }
 
+// kindName renders a column kind for error messages.
+func kindName(kind columnKind) string {
+	switch kind {
+	case kindInt64:
+		return "integer"
+	case kindInt32:
+		return "integer"
+	case kindFloat64:
+		return "number"
+	case kindBool:
+		return "boolean"
+	case kindTime:
+		return "timestamp"
+	default:
+		return "string"
+	}
+}
+
 func findTimeColumn(plans []columnPlan, timeColumn string) (int, error) {
 	if timeColumn != "" {
 		for i := range plans {
 			if strings.EqualFold(plans[i].name, timeColumn) {
+				if plans[i].kind != kindTime {
+					return -1, fmt.Errorf("configured time column %q is not a timestamp column (its type maps to %s); set Time column to a timestamp field or use Table format",
+						plans[i].name, kindName(plans[i].kind))
+				}
 				return i, nil
 			}
 		}

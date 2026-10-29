@@ -29,11 +29,32 @@ export class KwdbVariableSupport extends CustomVariableSupport<KwdbDataSource, a
     return VariableSupportType.Custom;
   }
 
+  /**
+   * Seeds a brand-new query variable with a valid, cheap query (`tables()`)
+   * instead of leaving it empty.
+   *
+   * The base class types the return value as `Partial<TQuery>` (the *panel*
+   * query), because Grafana shares one helper between both paths; on the
+   * variable path the value is consumed as the variable query model.
+   */
+  getDefaultQuery(): Partial<KwdbQuery> & KwdbVariableQuery {
+    return { queryType: 'tables' };
+  }
+
   query(request: DataQueryRequest<any>): Observable<DataQueryResponse> {
-    const target = request.targets?.[0] as KwdbVariableQuery | undefined;
-    if (!target) {
-      // Grafana always sends at least one target; an empty request means the
+    const target = request.targets?.[0];
+    if (target === undefined || target === null || target === '') {
+      // Grafana always sends at least one target; an empty one means the
       // variable has no query yet, which is not an error.
+      return of({ data: [] });
+    }
+
+    if (typeof target !== 'string' && typeof (target as KwdbVariableQuery).queryType !== 'string') {
+      // Grafana replaces an empty variable query with the data source's *panel*
+      // default query before it reaches this method (see runRequest's
+      // callQueryMethod). That object is not a variable query, so do not send it
+      // through metricFindQuery and surface "Unsupported variable query" for a
+      // variable the user has not configured yet.
       return of({ data: [] });
     }
 

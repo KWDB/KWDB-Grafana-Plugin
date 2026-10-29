@@ -7,7 +7,8 @@ Grafana time series or table data.
 
 > 本插件适用于 KaiwuDB 及其开源版本 KWDB，可以在 Grafana 中查询、展示和分析
 > KWDB 时序数据。
-> ![example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/example.png)
+
+![example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/example.png)
 
 ## Features
 
@@ -87,7 +88,7 @@ with `GRAFANA_PORT`.
 To point the provisioned data source at an existing KWDB instance:
 
 ```bash
-KWDB_HOST=10.110.105.80 KWDB_PORT=26258 KWDB_DATABASE=ts_db \
+KWDB_HOST=db.example.com KWDB_PORT=26257 KWDB_DATABASE=example_db \
   docker compose up -d --no-deps grafana
 ```
 
@@ -313,6 +314,16 @@ write.
 - Confirm the port is reachable from the Grafana backend.
 - Check KWDB account permissions.
 
+### TLS handshake fails or plaintext still connects
+
+- `verify-ca` and `verify-full` require the **SSL Root Cert** field to point at
+  the CA that signed the node certificate; without it the connection is
+  rejected.
+- KWDB does not reject plaintext connections for its built-in administrative
+  account even when the server was started with `--certs-dir`. To actually
+  enforce TLS, connect with a non-administrative account and configure the
+  server's HBA to reject non-TLS connections for that account.
+
 ### Table list is empty
 
 - Confirm the configured database exists.
@@ -366,6 +377,12 @@ write.
 
 - See [DEVELOPMENT.md](DEVELOPMENT.md) for local development, testing, and
   packaging.
+- See [RoadMap.md](RoadMap.md) for the release plan and the items that are
+  explicitly out of scope.
+- Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+  development workflow and the pull request checklist.
+- To report a security vulnerability, follow [SECURITY.md](SECURITY.md) instead
+  of opening a public issue.
 - Plugin ID: `lumingsun-kwdbtsdb-datasource`
 - First submissions do not require a signature. After review, versions are
   signed and released through the `Release` GitHub Actions workflow.

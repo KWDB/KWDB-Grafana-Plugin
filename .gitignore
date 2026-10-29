@@ -52,3 +52,7 @@ ci/
 
 # Throwaway certificates for the TLS verification harness (contain a private key)
 verify-real/tls/
+
+# Generated artifacts of the real-server verification harness
+verify-real/cases.json
+verify-real/results.json

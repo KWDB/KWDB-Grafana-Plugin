@@ -1,3 +1,9 @@
+//go:build integration
+
+// This harness talks to a live KWDB instance and is excluded from the default
+// build. Run it explicitly with `go test -tags integration ./pkg/plugin -run
+// TestRealServer -v` and the environment variables documented below.
+
 package plugin
 
 import (
@@ -19,8 +25,8 @@ import (
 // Everything here runs against a live KWDB instance, so it is skipped unless
 // KWDB_VERIFY_DSN is set:
 //
-//	KWDB_VERIFY_DSN="postgres://root:passwd@10.110.105.80:26267/factory?sslmode=disable" \
-//	  go test ./pkg/plugin/ -run TestRealServer -v
+//	KWDB_VERIFY_DSN="postgres://<user>:<password>@kwdb.example.com:26257/<database>?sslmode=disable" \
+//	  go test -tags integration ./pkg/plugin/ -run TestRealServer -v
 //
 // Unlike the unit tests, this exercises the whole backend pipeline: settings
 // validation, pool creation, session parameters, health checks, macro
@@ -48,10 +54,10 @@ func realInstanceWith(t *testing.T, dsn string, extra map[string]any) *Datasourc
 	if err != nil {
 		t.Fatalf("settingsFromDSN: %v", err)
 	}
-	applyDefaults(cfg)
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
+	applyDefaults(cfg)
 	raw, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -224,10 +230,10 @@ func TestRealServerHealth(t *testing.T) {
 func TestRealServerHealthFailureHints(t *testing.T) {
 	dsn := realDSN(t)
 
-	// NOTE: the KWDB instance used for this verification accepts any password
-	// and any database name (trust authentication), so the authentication and
-	// missing-database hints cannot be exercised against it. Only the
-	// connection-refused path is observable here.
+	// NOTE: a verification instance may use trust authentication, in which
+	// case the authentication and missing-database hints cannot be exercised
+	// against it. Only the connection-refused path is asserted here; the other
+	// hints are covered by the unit tests.
 	cases := []struct {
 		name    string
 		mutate  func(string) string
@@ -318,8 +324,8 @@ func TestRealServerReadOnlyGuard(t *testing.T) {
 	allowed := []string{
 		"SELECT 1",
 		"SELECT count(*) FROM equipment_telemetry",
-		"SHOW TABLES FROM factory",
-		"SHOW CREATE TABLE factory.equipment_telemetry",
+		"SHOW TABLES FROM example_db",
+		"SHOW CREATE TABLE example_db.equipment_telemetry",
 		"EXPLAIN SELECT 1",
 		"WITH x AS (SELECT 1 AS n) SELECT n FROM x",
 		"SELECT 'insert into t values (1)' AS s",
@@ -409,10 +415,18 @@ func TestRealServerSessionIsReadOnly(t *testing.T) {
 		}
 	}
 
-	_, err = conn.Exec(ctx, "CREATE TABLE factory.realverify_probe (a INT)")
-	if err == nil {
-		_, _ = conn.Exec(ctx, "DROP TABLE factory.realverify_probe")
-		t.Fatal("CREATE TABLE succeeded: the pooled session is not read-only")
+	// A dedicated verification database is required for this case: if the
+	// session is not read-only the CREATE below succeeds, so use a unique table
+	// name and always clean it up. Never point KWDB_VERIFY_DSN at a shared
+	// database when running this test.
+	probeTable := fmt.Sprintf("realverify_probe_%d", time.Now().UnixNano())
+	if _, err = conn.Exec(ctx, "CREATE TABLE "+probeTable+" (a INT)"); err == nil {
+		defer func() {
+			if _, dropErr := conn.Exec(context.Background(), "DROP TABLE "+probeTable); dropErr != nil {
+				t.Logf("could not drop probe table %s: %v", probeTable, dropErr)
+			}
+		}()
+		t.Fatalf("CREATE TABLE succeeded: the pooled session is not read-only")
 	}
 	t.Logf("write attempt rejected as expected: %v", err)
 }
@@ -657,12 +671,12 @@ func TestRealServerMetadataResources(t *testing.T) {
 //
 // These cases need a KWDB instance that requires TLS. Set:
 //
-//	KWDB_TLS_HOST=10.110.105.80
-//	KWDB_TLS_PORT=26268
-//	KWDB_TLS_DATABASE=factory_tls
+//	KWDB_TLS_HOST=<host>
+//	KWDB_TLS_PORT=<port>
+//	KWDB_TLS_DATABASE=<database>
 //	KWDB_TLS_ROOT_CERT=/path/to/ca.crt
-//	KWDB_TLS_USER=root                 KWDB_TLS_PASSWORD=...
-//	KWDB_TLS_PLAINTEXT_USER=grafanatls KWDB_TLS_PLAINTEXT_PASSWORD=...
+//	KWDB_TLS_USER=<user>                 KWDB_TLS_PASSWORD=<password>
+//	KWDB_TLS_PLAINTEXT_USER=<user>       KWDB_TLS_PLAINTEXT_PASSWORD=<password>
 //
 // The sslmode and CA are passed through jsonData exactly as the data source
 // configuration page stores them, so the whole settings -> buildConnString ->
@@ -729,13 +743,10 @@ func TestRealServerTLSModes(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		if tc.name == "verify-ca with a foreign CA" || tc.name == "verify-full with a foreign CA" {
-			if foreignCA == "" {
-				t.Skipf("%s: set KWDB_TLS_FOREIGN_CA to run it", tc.name)
-				continue
-			}
-		}
 		t.Run(tc.name, func(t *testing.T) {
+			if (tc.name == "verify-ca with a foreign CA" || tc.name == "verify-full with a foreign CA") && foreignCA == "" {
+				t.Skip("set KWDB_TLS_FOREIGN_CA to run the foreign-CA cases")
+			}
 			d := realTLSInstance(t, host, port, database, user, password, tc.sslMode, tc.rootCert)
 			res, err := d.CheckHealth(context.Background(), &backend.CheckHealthRequest{})
 			if err != nil {

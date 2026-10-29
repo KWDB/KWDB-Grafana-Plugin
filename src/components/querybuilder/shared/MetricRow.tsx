@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { IconButton, Input, Select, Stack } from '@grafana/ui';
 
 import type { ColumnInfo, MetricSpec } from '../../../types';
@@ -22,17 +22,18 @@ interface Props {
 }
 
 export function MetricRow({ index, columns, metric, onChange, onRemove, hideAggregation, excludeAggregations }: Props) {
-  const excluded = new Set(excludeAggregations ?? []);
-  const aggregations = getAggregationsForColumn(columns, metric.column).filter(
-    (aggregation) => !excluded.has(aggregation)
-  );
+  const excluded = useMemo(() => new Set(excludeAggregations ?? []), [excludeAggregations]);
+  const allowedAggregations = (columnName?: string) =>
+    getAggregationsForColumn(columns, columnName).filter((aggregation) => !excluded.has(aggregation));
+  const aggregations = allowedAggregations(metric.column);
 
   const handleColumnChange = (value: string[]) => {
     const column = value[0] ?? '';
     // Reset the aggregation when the newly selected column does not support it
-    // (e.g. switching from a FLOAT8 to a VARCHAR or tag column).
-    const allowed = getAggregationsForColumn(columns, column);
-    const aggregation = allowed.includes(metric.aggregation) ? metric.aggregation : allowed[0];
+    // (e.g. switching from a FLOAT8 to a VARCHAR or tag column), choosing only
+    // from the aggregations this row actually offers.
+    const allowed = allowedAggregations(column);
+    const aggregation = allowed.includes(metric.aggregation) ? metric.aggregation : (allowed[0] ?? metric.aggregation);
     onChange({ ...metric, column, aggregation });
   };
 

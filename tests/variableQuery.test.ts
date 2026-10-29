@@ -64,6 +64,20 @@ describe('parseVariableQuery with structured input', () => {
     expect(input.table).toBe('sensors');
   });
 
+  it('rejects non-string structured table or column fields with a readable error', () => {
+    expect(() => parse({ queryType: 'columns', table: 5 })).toThrow('Variable query "columns" requires a table');
+    expect(() => parse({ queryType: 'tagValues', table: 'sensors', column: 5 })).toThrow(
+      'Variable query "tagValues" requires a table and a tag column'
+    );
+  });
+
+  it('rejects parentheses in a structured table or column name', () => {
+    expect(() => parse({ queryType: 'columns', table: 'a)(b' })).toThrow('cannot contain "(" or ")"');
+    expect(() => parse({ queryType: 'tagValues', table: 'sensors', column: 'a(b' })).toThrow(
+      'cannot contain "(" or ")"'
+    );
+  });
+
   it('treats a non-string queryType as a raw string and rejects it', () => {
     expect(() => parse({ queryType: 5 })).toThrow('Unsupported variable query');
   });
@@ -204,6 +218,23 @@ describe('parseVariableQuery with string input', () => {
       'Variable query tag_values(table, column) requires exactly two arguments'
     );
   });
+
+  it('rejects parentheses inside an argument', () => {
+    // `columns(a)(b)` used to be accepted with table `a)(b`, because the
+    // trailing `)` matched the pattern and the inner parentheses were kept.
+    expect(() => parse('columns(a)(b)')).toThrow('cannot contain "(" or ")"');
+    expect(() => parse('columns(a))')).toThrow('cannot contain "(" or ")"');
+    expect(() => parse('tag_values(a)(b, c)')).toThrow('cannot contain "(" or ")"');
+    expect(() => parse('tag_values(sensors, a(b))')).toThrow('cannot contain "(" or ")"');
+  });
+
+  it('unescapes a doubled double quote inside an argument', () => {
+    expect(parse('tag_values("a""b", column_1)')).toEqual({
+      queryType: 'tagValues',
+      table: 'a"b',
+      column: 'column_1',
+    });
+  });
 });
 
 describe('buildVariableQueryString', () => {
@@ -230,6 +261,23 @@ describe('buildVariableQueryString', () => {
     );
     expect(() => buildVariableQueryString({ queryType: 'tagValues', table: 'sensors' })).toThrow(
       'Variable query "tagValues" requires a table and a tag column'
+    );
+  });
+
+  it('quotes an argument that contains a quote character', () => {
+    expect(buildVariableQueryString({ queryType: 'columns', table: "o'brien" })).toBe('columns("o\'brien")');
+    expect(buildVariableQueryString({ queryType: 'tagValues', table: 'a",b', column: 'c' })).toBe(
+      'tag_values("a"",b", c)'
+    );
+    expect(buildVariableQueryString({ queryType: 'columns', table: 'a`b' })).toBe('columns("a`b")');
+  });
+
+  it('refuses to render an argument it could not parse back', () => {
+    expect(() => buildVariableQueryString({ queryType: 'columns', table: 'a)(b' })).toThrow(
+      'cannot contain "(" or ")"'
+    );
+    expect(() => buildVariableQueryString({ queryType: 'tagValues', table: 'a\nb', column: 'device_id' })).toThrow(
+      'cannot contain a line break'
     );
   });
 
@@ -273,6 +321,20 @@ describe('parse -> build -> parse round trip', () => {
       table: 'my,sensors',
       column: 'device_id',
     });
+  });
+
+  it('round trips names containing quotes, commas and backticks', () => {
+    const values: KwdbVariableQuery[] = [
+      { queryType: 'columns', table: "o'brien" },
+      { queryType: 'columns', table: 'a"b' },
+      { queryType: 'columns', table: 'a,b' },
+      { queryType: 'columns', table: 'a`b' },
+      { queryType: 'tagValues', table: 'a",b', column: "o'brien" },
+      { queryType: 'tagValues', table: 'my,sensors', column: 'device_id' },
+    ];
+    for (const value of values) {
+      expect(parse(buildVariableQueryString(value))).toEqual(value);
+    }
   });
 
   it('survives the string form of every query type', () => {

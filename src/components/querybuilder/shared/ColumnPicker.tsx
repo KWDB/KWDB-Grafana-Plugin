@@ -33,7 +33,7 @@ export function ColumnPicker({ columns, value, onChange, kind = 'tags', ariaLabe
         aria-label={ariaLabel ?? 'Metric column'}
         options={dataOptions}
         value={value[0] ? (optionsByValue.get(value[0]) ?? { label: value[0], value: value[0] }) : undefined}
-        onChange={(item) => onChange(item.value ? [item.value] : [])}
+        onChange={(item) => onChange(item?.value ? [item.value] : [])}
         placeholder={placeholder ?? 'Select metric column'}
         isClearable
         menuShouldPortal={false}

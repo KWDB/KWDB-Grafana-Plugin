@@ -17,7 +17,7 @@ export function IntervalPicker({ value, onChange, ariaLabel = 'Interval' }: Prop
       aria-label={ariaLabel}
       options={options}
       value={value ? { label: value, value } : undefined}
-      onChange={(item) => onChange(item.value ?? '')}
+      onChange={(item) => onChange(item?.value ?? '')}
       placeholder="Type or select interval (e.g. 5m, 90s)"
       allowCustomValue
       createOptionPosition="first"

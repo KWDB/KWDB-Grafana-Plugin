@@ -10,6 +10,10 @@ on:
       - master
       - main
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -81,10 +85,11 @@ jobs:
         if: steps.check-for-backend.outputs.has-backend == 'true'
         run: go test ./pkg/...
 
-      # Adversarial scanning: report known vulnerabilities without failing the
-      # build. The remaining findings are Go standard library issues that are
-      # fixed in a newer patch release than the toolchain pinned by go.mod;
-      # bump the toolchain and drop continue-on-error once it is available.
+      # Non-blocking on purpose: go.mod pins Go 1.26.5 and govulncheck reports
+      # two standard-library advisories that are fixed in newer Go patch
+      # releases (net/http GO-2026-6617 fixed in 1.26.9, crypto/x509
+      # GO-2026-6809 fixed in 1.26.10). Bump the Go toolchain in go.mod to
+      # 1.26.9+ and then remove continue-on-error so this scan blocks again.
       - name: Scan backend dependencies for known vulnerabilities
         if: steps.check-for-backend.outputs.has-backend == 'true'
         continue-on-error: true
@@ -107,7 +112,7 @@ jobs:
       - name: Get plugin metadata
         id: metadata
         run: |
-          sudo apt-get install jq
+          sudo apt-get install -y jq
 
           export GRAFANA_PLUGIN_ID=$(cat dist/plugin.json | jq -r .id)
           export GRAFANA_PLUGIN_VERSION=$(cat dist/plugin.json | jq -r .info.version)
@@ -144,6 +149,7 @@ jobs:
   plugin-validator:
     name: Full plugin validator
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     # Runs the complete Grafana plugin validator (all analyzers), not just the
     # metadata check that runs inline in the build job. This is the same
     # command the Grafana review process runs, so catching a regression here
@@ -156,6 +162,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
 
       - name: Download plugin
         uses: actions/download-artifact@v8

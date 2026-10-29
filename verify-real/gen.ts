@@ -3,11 +3,16 @@
  *
  * Generates SQL using the *actual* source modules (src/sqlBuilder.ts and
  * src/variableQuery.ts) so the statements executed against a real KWDB are
- * byte-identical to what the plugin emits, then applies the same
- * $__timeFrom/$__timeTo expansion the Go backend performs (pkg/plugin/macros.go).
+ * byte-identical to what the plugin emits, then applies only the
+ * $__timeFrom/$__timeTo expansion that the Go backend performs
+ * (pkg/plugin/macros.go).
+ *
+ * $__timeFilter and $__timeGroup are expanded by the Go backend and covered by
+ * the Go test suite; if a generated statement still contains one of them this
+ * harness throws instead of writing a case that cannot be executed verbatim.
  *
  * Usage: npx ts-node --compiler-options '{"module":"commonjs"}' verify-real/gen.ts
- * Output: verify-real/cases.json
+ * Output: verify-real/cases.json (generated artifact, git-ignored)
  */
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,6 +26,25 @@ const TO = '2026-10-27 06:00:00';
 /** Mirrors ExpandMacros in pkg/plugin/macros.go for the two scalar macros. */
 function expand(sql: string): string {
   return sql.replaceAll('$__timeFrom', `'${FROM}'::TIMESTAMP`).replaceAll('$__timeTo', `'${TO}'::TIMESTAMP`);
+}
+
+const UNSUPPORTED_MACROS = ['$__timeFilter', '$__timeGroup'];
+
+/**
+ * This harness only mirrors the two scalar macros. A statement that still needs
+ * the function-style macros must be expanded by the backend, so it cannot be
+ * executed verbatim here.
+ */
+function assertExecutable(sql: string, id: string): string {
+  for (const macro of UNSUPPORTED_MACROS) {
+    if (sql.includes(macro)) {
+      throw new Error(
+        `${id}: generated SQL still contains ${macro}. verify-real only expands $__timeFrom/$__timeTo; ` +
+          'add a raw case without function macros, or extend the harness deliberately.'
+      );
+    }
+  }
+  return sql;
 }
 
 const TABLE = 'equipment_telemetry';
@@ -48,7 +72,7 @@ const cases: Case[] = [];
 
 function add(id: string, feature: string, expect: string, query: KwdbQuery) {
   const sql = buildSql(query);
-  cases.push({ id, feature, expect, sql: sql ? expand(sql) : '' });
+  cases.push({ id, feature, expect, sql: sql ? assertExecutable(expand(sql), id) : '' });
 }
 
 // ---------------------------------------------------------------- downsampling
@@ -81,9 +105,9 @@ add('DS-07', 'downsampling/agg-none-alias', 'column AS alias + GROUP BY', {
   ...base,
   metrics: [{ column: 'current_val', aggregation: 'none', alias: 'amps' }],
 });
-add('DS-08', 'downsampling/qualified-table', '"factory"."equipment_telemetry"', {
+add('DS-08', 'downsampling/qualified-table', '"example_db"."equipment_telemetry"', {
   ...base,
-  table: 'factory.equipment_telemetry',
+  table: 'example_db.equipment_telemetry',
 });
 add('DS-09', 'downsampling/nullable-column', 'temperature is NULL-able', {
   ...base,
@@ -239,13 +263,13 @@ add('WN-window-agg-none', 'window/agg-none', 'metric column before window in GRO
   windowInterval: '1h',
   metrics: [{ column: 'current_val', aggregation: 'none' }],
 });
-// interpolate() requires an aggregate as its first argument, so gapfill cannot
-// take a bare column. The gapfill editor excludes "none" for this reason; the
-// case is kept here to pin the KWDB error down.
+// interpolate() requires an aggregate as its first argument, so the SQL layer
+// coerces a legacy gapfill `none` to `avg`. This case pins that coercion down;
+// it is expected to execute now, not to reproduce the old KWDB error.
 cases.push({
   id: 'WN-gapfill-agg-none',
-  feature: 'gapfill/agg-none',
-  expect: "KWDB: 'the first parameter of interpolate must be agg func'",
+  feature: 'gapfill/agg-none-coerced',
+  expect: 'legacy none is coerced to avg and executes',
   sql: expand(
     buildSql({
       ...base,
@@ -254,7 +278,6 @@ cases.push({
       metrics: [{ column: 'current_val', aggregation: 'none' }],
     })
   ),
-  expectFail: true,
 });
 add('WN-event-window-reachable', 'window/EVENT_WINDOW-reachable', 'reachable end condition yields rows', {
   ...base,
@@ -309,8 +332,8 @@ const rawCases: Array<[string, string, string]> = [
     'SELECT k_timestamp, device_id, current_val FROM equipment_telemetry ORDER BY k_timestamp LIMIT 50',
   ],
   ['RAW-03', 'raw/aggregate', 'SELECT count(*), avg(current_val) FROM equipment_telemetry'],
-  ['RAW-04', 'raw/show-tables', 'SHOW TABLES FROM factory'],
-  ['RAW-05', 'raw/show-create', 'SHOW CREATE TABLE factory.equipment_telemetry'],
+  ['RAW-04', 'raw/show-tables', 'SHOW TABLES FROM example_db'],
+  ['RAW-05', 'raw/show-create', 'SHOW CREATE TABLE example_db.equipment_telemetry'],
   [
     'RAW-06',
     'raw/with-cte',
@@ -324,7 +347,8 @@ const rawCases: Array<[string, string, string]> = [
   ],
 ];
 for (const [id, feature, rawSql] of rawCases) {
-  cases.push({ id, feature, expect: 'executes', sql: expand(rawSql) });
+  const sql = assertExecutable(expand(rawSql), id);
+  cases.push({ id, feature, expect: 'executes', sql });
 }
 
 // --------------------------------------------------------- variable query round-trip
@@ -367,15 +391,15 @@ const varRejectResults = varRejects.map((raw) => {
 
 // The actual SQL the backend runs for each variable query type.
 const varSql: Array<{ id: string; sql: string }> = [
-  { id: 'VQ-tables', sql: 'SHOW TABLES FROM "factory"' },
-  { id: 'VQ-columns', sql: 'SHOW CREATE TABLE "factory"."equipment_telemetry"' },
+  { id: 'VQ-tables', sql: 'SHOW TABLES FROM "example_db"' },
+  { id: 'VQ-columns', sql: 'SHOW CREATE TABLE "example_db"."equipment_telemetry"' },
   {
     id: 'VQ-tag-values',
-    sql: 'SELECT DISTINCT "device_id" FROM "factory"."equipment_telemetry" ORDER BY "device_id" LIMIT 10000',
+    sql: 'SELECT DISTINCT "device_id" FROM "example_db"."equipment_telemetry" ORDER BY "device_id" LIMIT 10000',
   },
   {
     id: 'VQ-tag-values-multi',
-    sql: 'SELECT DISTINCT "workshop_id" FROM "factory"."equipment_telemetry" ORDER BY "workshop_id" LIMIT 10000',
+    sql: 'SELECT DISTINCT "workshop_id" FROM "example_db"."equipment_telemetry" ORDER BY "workshop_id" LIMIT 10000',
   },
 ];
 

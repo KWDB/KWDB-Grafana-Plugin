@@ -53,7 +53,7 @@ The compose stack starts KWDB, seeds the `demo_ts.sensors` table, provisions the
 To point Grafana at an existing KWDB instance:
 
 ```bash
-KWDB_HOST=10.110.105.80 KWDB_PORT=26258 KWDB_DATABASE=ts_db \
+KWDB_HOST=db.example.com KWDB_PORT=26257 KWDB_DATABASE=example_db \
   docker compose up -d --no-deps grafana
 ```
 

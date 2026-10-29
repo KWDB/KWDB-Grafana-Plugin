@@ -198,6 +198,15 @@ describe('buildDownsamplingSql', () => {
     expect(sql).toContain('FROM "iot"."sensors"');
   });
 
+  it('treats a dot inside quotes as part of the identifier', () => {
+    expect(buildDownsamplingSql(query({ table: 'my.table' }))).toContain('FROM "my"."table"');
+    expect(buildDownsamplingSql(query({ table: '"my.table"' }))).toContain('FROM "my.table"');
+    expect(buildDownsamplingSql(query({ table: '"my"."table"' }))).toContain('FROM "my"."table"');
+    expect(buildDownsamplingSql(query({ table: 'db."my.table"' }))).toContain('FROM "db"."my.table"');
+    expect(buildDownsamplingSql(query({ table: 'db."my.table"' }))).not.toContain('"""');
+    expect(buildDownsamplingSql(query({ table: 'a."b.c".d' }))).toContain('FROM "a"."b.c"."d"');
+  });
+
   it('cannot be broken out of through a hostile column name', () => {
     const payload = 'x" ) AS evil --';
     const sql = buildDownsamplingSql(query({ metrics: [{ column: payload, aggregation: 'avg' }] }));
@@ -318,13 +327,27 @@ describe('buildGapfillSql', () => {
     expect(sql).toContain(`interpolate(avg("temperature"), 'linear')`);
   });
 
-  it('supports aliases and none-aggregated columns inside interpolate()', () => {
+  it('coerces a legacy none aggregation to avg', () => {
+    // interpolate() requires an aggregate function ("the first parameter of
+    // interpolate must be agg func"), so the builder repairs a query saved while
+    // "none" was still offered for gapfill instead of emitting invalid SQL.
+    const sql = buildGapfillSql(query({ mode: 'gapfill', metrics: [{ column: 'voltage', aggregation: 'none' }] }));
+    expect(sql).toContain(`interpolate(avg("voltage"), 'linear') AS "avg_voltage"`);
+    expect(sql).not.toContain(`interpolate("voltage"`);
+    expect(sql).toContain('GROUP BY "time"');
+    expect(sql).not.toContain('GROUP BY "time", "voltage"');
+  });
+
+  it('keeps an explicit alias when coercing none to avg', () => {
+    const sql = buildGapfillSql(
+      query({ mode: 'gapfill', metrics: [{ column: 'voltage', aggregation: 'none', alias: 'volts' }] })
+    );
+    expect(sql).toContain(`interpolate(avg("voltage"), 'linear') AS "volts"`);
+  });
+
+  it('supports an explicit alias on an aggregated metric', () => {
     const aliased = buildGapfillSql(query({ mode: 'gapfill', metrics: [metric({ alias: 'filled' })] }));
     expect(aliased).toContain(`interpolate(avg("temperature"), 'linear') AS "filled"`);
-
-    const raw = buildGapfillSql(query({ mode: 'gapfill', metrics: [{ column: 'voltage', aggregation: 'none' }] }));
-    expect(raw).toContain(`interpolate("voltage", 'linear')`);
-    expect(raw).not.toContain(`"voltage" AS`);
   });
 
   it('returns an empty string when the table, time column or metrics are missing', () => {
@@ -485,6 +508,19 @@ describe('buildWindowSql', () => {
     ).toBe('');
   });
 
+  it('rejects COUNT_WINDOW arguments that are not positive integers', () => {
+    // COUNT_WINDOW takes int8 row counts, so decimals and 0 fail in KWDB.
+    for (const windowInterval of ['10.5', '0', '-5', '1e3']) {
+      expect(buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval }))).toBe('');
+    }
+    expect(
+      buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10', windowSlide: '2.5' }))
+    ).toBe('');
+    expect(
+      buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10', windowSlide: '0' }))
+    ).toBe('');
+  });
+
   it('renders STATE_WINDOW from the start condition', () => {
     const sql = buildWindowSql(query({ mode: 'window', windowType: 'STATE_WINDOW', eventStartCond: 'status' }));
     expect(sql).toContain('GROUP BY STATE_WINDOW(status)');
@@ -591,6 +627,25 @@ describe('buildWindowSql', () => {
     const sql = buildWindowSql(query({ mode: 'window', windowType: 'COUNT_WINDOW', windowInterval: '10' }));
     expect(sql).toContain(`SELECT first("ts") AS "time"`);
     expect(sql).not.toContain('time_bucket');
+  });
+});
+
+// Dashboard JSON is not type-checked, so these fields can hold anything at
+// runtime. They must be rejected instead of being spliced into the statement.
+describe('untyped dashboard JSON', () => {
+  const bogus = (aggregation: string) =>
+    [{ column: 'voltage', aggregation }] as unknown as [{ column: string; aggregation: 'avg' }];
+
+  it('returns an empty statement for an unsupported aggregation', () => {
+    expect(buildDownsamplingSql(query({ metrics: bogus('median') }))).toBe('');
+    expect(buildGapfillSql(query({ mode: 'gapfill', metrics: bogus('avg); DROP TABLE sensors; --') }))).toBe('');
+    expect(buildWindowSql(query({ mode: 'window', windowType: 'TIME_WINDOW', metrics: bogus('x') }))).toBe('');
+    expect(buildLatestSql(query({ mode: 'latest', metrics: bogus('') }))).toBe('');
+  });
+
+  it('returns an empty statement for an unsupported latest function', () => {
+    expect(buildLatestSql(query({ mode: 'latest', latestFunc: 'last; DROP TABLE sensors' as 'last' }))).toBe('');
+    expect(buildLatestSql(query({ mode: 'latest', latestFunc: 'last' }))).toContain('last("temperature")');
   });
 });
 

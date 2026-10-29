@@ -32,6 +32,10 @@ describe('KwdbVariableSupport', () => {
     expect(new KwdbVariableSupport(makeDatasource([])).getType()).toBe('custom');
   });
 
+  it('seeds a new variable with tables()', () => {
+    expect(new KwdbVariableSupport(makeDatasource([])).getDefaultQuery()).toEqual({ queryType: 'tables' });
+  });
+
   it('passes the first request target through to metricFindQuery', async () => {
     const query: KwdbVariableQuery = { queryType: 'tagValues', table: 'sensors', column: 'location' };
     const datasource = makeDatasource([{ text: 'Beijing', value: 'Beijing' }]);
@@ -46,7 +50,7 @@ describe('KwdbVariableSupport', () => {
     expect(response.data).toEqual([{ text: 'Beijing', value: 'Beijing' }]);
   });
 
-  it('forwards the time range and scoped variables so cascading variables keep working', async () => {
+  it('forwards the time range and scoped variables to metricFindQuery', async () => {
     const datasource = makeDatasource([]);
     const support = new KwdbVariableSupport(datasource);
     const scopedVars = { schema: { text: 'public', value: 'public' } };
@@ -60,6 +64,43 @@ describe('KwdbVariableSupport', () => {
     const [, options] = metricFindQueryMock(datasource).mock.calls[0];
     expect(options.scopedVars).toBe(scopedVars);
     expect(options.range).toBeDefined();
+  });
+
+  it('returns an empty result for the panel default query Grafana injects for an empty variable', async () => {
+    // Grafana replaces an empty variable query with datasource.getDefaultQuery()
+    // (a panel query: mode/format/metrics, no queryType) before calling this
+    // method. That is not a variable query and must not surface as an error.
+    const datasource = makeDatasource([]);
+    const support = new KwdbVariableSupport(datasource);
+
+    const response = await new Promise<{ data: MetricFindValue[] }>((resolve, reject) => {
+      support
+        .query(
+          makeRequest([
+            {
+              mode: 'downsampling',
+              format: 'time_series',
+              interval: '5m',
+              metrics: [{ column: '', aggregation: 'avg' }],
+            },
+          ])
+        )
+        .subscribe({ next: resolve, error: reject });
+    });
+
+    expect(response.data).toEqual([]);
+    expect(metricFindQueryMock(datasource)).not.toHaveBeenCalled();
+  });
+
+  it('passes a legacy string query through so old dashboard definitions keep working', async () => {
+    const datasource = makeDatasource([{ text: 'sensors', value: 'sensors' }]);
+    const support = new KwdbVariableSupport(datasource);
+
+    await new Promise<void>((resolve, reject) => {
+      support.query(makeRequest(['tables()'])).subscribe({ complete: resolve, error: reject });
+    });
+
+    expect(metricFindQueryMock(datasource)).toHaveBeenCalledWith('tables()', expect.anything());
   });
 
   it('returns an empty result when the request carries no targets', async () => {

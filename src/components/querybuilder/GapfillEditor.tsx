@@ -2,7 +2,7 @@ import React from 'react';
 import { Button, InlineField, Input, Select, VerticalGroup } from '@grafana/ui';
 
 import type { KwdbDataSource } from '../../datasource';
-import { buildSql, normalizeInterpolateMode } from '../../sqlBuilder';
+import { buildSql, coerceGapfillMetric, normalizeInterpolateMode } from '../../sqlBuilder';
 import type { KwdbQuery, MetricSpec } from '../../types';
 import { SqlPreview } from './SqlPreview';
 import { ColumnPicker } from './shared/ColumnPicker';
@@ -39,18 +39,21 @@ export function GapfillEditor({ datasource, query, onChange }: Props) {
   const columns = useTableColumns(datasource, query.table);
   const interpolateMode = normalizeInterpolateMode(query.interpolateMode);
 
-  const updateQuery = (patch: Partial<KwdbQuery>) => {
-    const next = { ...query, ...patch };
-    next.rawSql = buildSql(next);
-    onChange(next);
-  };
-
   // A query saved before "none" was excluded from the gapfill dropdown would
   // still carry it; interpolate() cannot take a bare column, so it is coerced
   // to the default aggregation instead of emitting a statement KWDB rejects.
   const metrics: MetricSpec[] = (
     query.metrics?.length ? query.metrics : [{ column: '', aggregation: 'avg' as const }]
-  ).map((metric) => (metric.aggregation === 'none' ? { ...metric, aggregation: 'avg' as const } : metric));
+  ).map(coerceGapfillMetric);
+
+  const updateQuery = (patch: Partial<KwdbQuery>) => {
+    // Rebuild the SQL from the coerced metrics, so editing the interval, the
+    // tags or the interpolation mode also repairs a legacy `none` instead of
+    // only editing the metric row doing so.
+    const next: KwdbQuery = { ...query, metrics, ...patch };
+    next.rawSql = buildSql(next);
+    onChange(next);
+  };
 
   const updateMetric = (index: number, metric: MetricSpec) => {
     updateQuery({ metrics: metrics.map((item, itemIndex) => (itemIndex === index ? metric : item)) });

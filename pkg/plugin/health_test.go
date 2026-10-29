@@ -35,8 +35,18 @@ func TestHealthHint(t *testing.T) {
 			wantHas: "Authentication failed",
 		},
 		{
-			name:    "invalid authorization specification",
-			err:     pgError("28000", "no pg_hba.conf entry for host"),
+			name:    "hba policy rejection",
+			err:     pgError("28000", "no pg_hba.conf entry for host, SSL off"),
+			wantHas: "HBA",
+		},
+		{
+			name:    "plaintext rejected by configuration is not a password problem",
+			err:     pgError("28000", "authentication rejected by configuration"),
+			wantHas: "HBA",
+		},
+		{
+			name:    "plain 28000 authorization failure stays an authentication hint",
+			err:     pgError("28000", "authentication failed"),
 			wantHas: "Authentication failed",
 		},
 		{
@@ -73,6 +83,13 @@ func TestHealthHint(t *testing.T) {
 			name:    "deadline exceeded",
 			err:     fmt.Errorf("connect: %w", context.DeadlineExceeded),
 			wantHas: "timed out",
+		},
+		{
+			// A canceled request is not a timeout and must not tell the user to
+			// check the host and port.
+			name:    "context canceled",
+			err:     fmt.Errorf("connect: %w", context.Canceled),
+			wantHas: "canceled",
 		},
 		{
 			name:    "net timeout",
@@ -153,6 +170,17 @@ func TestHealthCheckMessage(t *testing.T) {
 		}
 		if !messageContains(got, "***@") {
 			t.Fatalf("message = %q, want the userinfo to be masked", got)
+		}
+	})
+
+	t.Run("hba rejection keeps the raw sqlstate", func(t *testing.T) {
+		err := pgError("28000", "authentication rejected by configuration")
+		got := healthCheckMessage(err)
+		if !messageContains(got, "HBA") {
+			t.Fatalf("message = %q, want an HBA hint", got)
+		}
+		if !messageContains(got, "SQLSTATE 28000") {
+			t.Fatalf("message = %q, want the SQLSTATE to be preserved", got)
 		}
 	})
 

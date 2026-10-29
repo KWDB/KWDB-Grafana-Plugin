@@ -47,12 +47,16 @@ func LoadSettings(source backend.DataSourceInstanceSettings) (*DataSourceSetting
 	return &settings, &SecretDataSourceSettings{Password: source.DecryptedSecureJSONData["password"]}, nil
 }
 
-// Validate rejects connection settings that cannot produce a working pool. It
-// runs after the defaults have been applied, so an empty SSLMode means
-// "disable". Returning an error here surfaces a readable message in the data
+// Validate rejects connection settings that cannot produce a working pool.
+//
+// It must run before applyDefaults: a zero value means "not configured yet" and
+// is accepted because the defaults fill it in afterwards. Negative pool options
+// are rejected instead of being silently replaced by a default (unlike
+// queryTimeout and maxRows, where a negative value is a documented "disable"
+// switch). Returning an error here surfaces a readable message in the data
 // source configuration page instead of an opaque pgx parse failure.
 func (s *DataSourceSettings) Validate() error {
-	if s.Port < 1 || s.Port > 65535 {
+	if s.Port != 0 && (s.Port < 1 || s.Port > 65535) {
 		return fmt.Errorf("port must be between 1 and 65535, got %d", s.Port)
 	}
 
@@ -66,8 +70,8 @@ func (s *DataSourceSettings) Validate() error {
 		return fmt.Errorf("unsupported sslMode %q: expected one of disable, require, verify-ca, verify-full", s.SSLMode)
 	}
 
-	if s.MaxConns < 1 {
-		return fmt.Errorf("maxConns must be at least 1, got %d", s.MaxConns)
+	if s.MaxConns < 0 {
+		return fmt.Errorf("maxConns must not be negative, got %d", s.MaxConns)
 	}
 	if s.MaxConnLifetime < 0 {
 		return fmt.Errorf("maxConnLifetime must not be negative, got %d", s.MaxConnLifetime)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -59,7 +60,7 @@ func (d *Datasource) query(ctx context.Context, query backend.DataQuery) backend
 	var qm models.QueryModel
 	err := json.Unmarshal(query.JSON, &qm)
 	if err != nil {
-		return backend.ErrDataResponseWithSource(backend.StatusBadRequest, backend.ErrorSourcePlugin, fmt.Sprintf("json unmarshal: %v", err.Error()))
+		return backend.ErrDataResponseWithSource(backend.StatusBadRequest, backend.ErrorSourcePlugin, "json unmarshal: "+err.Error())
 	}
 
 	if strings.TrimSpace(qm.RawSql) == "" {
@@ -118,6 +119,17 @@ func (d *Datasource) query(ctx context.Context, query backend.DataQuery) backend
 func errorSourceFor(err error) backend.ErrorSource {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
+		return backend.ErrorSourceDownstream
+	}
+	// A connection failure (refused, unreachable, TLS, DNS) is reported by the
+	// downstream database endpoint, not by a plugin bug, so Grafana should not
+	// label it "plugin error".
+	var connectErr *pgconn.ConnectError
+	if errors.As(err, &connectErr) {
+		return backend.ErrorSourceDownstream
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
 		return backend.ErrorSourceDownstream
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {

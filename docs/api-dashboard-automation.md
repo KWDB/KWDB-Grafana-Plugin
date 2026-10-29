@@ -20,15 +20,15 @@ curl -u admin:admin http://localhost:3001/api/...
 
 ```json
 {
-  "name": "KWDB-Factory-API",
+  "name": "KWDB-API",
   "type": "lumingsun-kwdbtsdb-datasource",
   "access": "proxy",
-  "uid": "kwdb-factory-api",
+  "uid": "kwdb-api",
   "jsonData": {
-    "host": "10.110.105.80",
-    "port": 26267,
-    "database": "factory",
-    "user": "root",
+    "host": "db.example.com",
+    "port": 26257,
+    "database": "example_db",
+    "user": "readonly_user",
     "sslMode": "disable",
     "maxConns": 8,
     "connectTimeout": 5
@@ -45,7 +45,7 @@ curl -u admin:admin http://localhost:3001/api/...
 - 创建后立刻验证连通性：
 
 ```bash
-curl -u admin:admin http://localhost:3001/api/datasources/uid/kwdb-factory-api/health
+curl -u admin:admin http://localhost:3001/api/datasources/uid/kwdb-api/health
 # {"message":"Data source is working","status":"OK"}
 ```
 
@@ -98,7 +98,7 @@ curl -u admin:admin http://localhost:3001/api/datasources/uid/kwdb-factory-api/h
   "id": 1,
   "type": "timeseries",
   "title": "...",
-  "datasource": { "type": "lumingsun-kwdbtsdb-datasource", "uid": "kwdb-factory-api" },
+  "datasource": { "type": "lumingsun-kwdbtsdb-datasource", "uid": "kwdb-api" },
   "gridPos": { "h": 9, "w": 12, "x": 0, "y": 0 },
   "targets": [ … ],
   "fieldConfig": {
@@ -136,7 +136,7 @@ curl -u admin:admin http://localhost:3001/api/datasources/uid/kwdb-factory-api/h
 ```json
 {
   "refId": "A", "mode": "raw", "format": "time_series",
-  "rawSql": "SELECT time_bucket(k_timestamp, '1m') AS time, avg(env_temperature) AS \"温度\", avg(env_humidity) AS \"湿度\" FROM factory_environment WHERE workshop_id = 'WS-01' AND $__timeFilter(k_timestamp) GROUP BY time ORDER BY time"
+  "rawSql": "SELECT time_bucket(k_timestamp, '1m') AS time, avg(env_temperature) AS \"温度\", avg(env_humidity) AS \"湿度\" FROM example_environment WHERE workshop_id = 'WS-01' AND $__timeFilter(k_timestamp) GROUP BY time ORDER BY time"
 }
 ```
 
@@ -158,10 +158,10 @@ _macros_ 宏（保留微秒精度）：
 ```json
 {
   "refId": "A", "mode": "downsampling", "format": "time_series",
-  "table": "factory_environment", "timeColumn": "k_timestamp",
+  "table": "example_environment", "timeColumn": "k_timestamp",
   "interval": "5m", "tags": ["workshop_id"],
   "metrics": [{ "column": "env_temperature", "aggregation": "avg", "alias": "温度" }],
-  "rawSql": "SELECT time_bucket(\"k_timestamp\", '5m') AS \"time\", \"workshop_id\", avg(\"env_temperature\") AS \"温度\" FROM \"factory_environment\" WHERE \"k_timestamp\" >= $__timeFrom AND \"k_timestamp\" <= $__timeTo GROUP BY \"time\", \"workshop_id\" ORDER BY \"time\", \"workshop_id\"" }
+  "rawSql": "SELECT time_bucket(\"k_timestamp\", '5m') AS \"time\", \"workshop_id\", avg(\"env_temperature\") AS \"温度\" FROM \"example_environment\" WHERE \"k_timestamp\" >= $__timeFrom AND \"k_timestamp\" <= $__timeTo GROUP BY \"time\", \"workshop_id\" ORDER BY \"time\", \"workshop_id\"" }
 ```
 
 `gapfill`（补零/插值）：把 `time_bucket` 换成 `time_bucket_gapfill`，metric 外包 `interpolate(expr, 'linear'/'PREV'/'NEXT'/'constant'/'NULL')`，其余同上。
@@ -171,10 +171,10 @@ _macros_ 宏（保留微秒精度）：
 ```json
 {
   "refId": "A", "mode": "latest", "format": "table",
-  "table": "factory_environment", "timeColumn": "k_timestamp",
+  "table": "example_environment", "timeColumn": "k_timestamp",
   "latestFunc": "last", "splitByTag": true,
   "metrics": [{ "column": "env_temperature", "aggregation": "last", "alias": "latest_env_temperature" }],
-  "rawSql": "SELECT \"workshop_id\", last(\"env_temperature\") AS \"latest_env_temperature\", last(\"k_timestamp\") AS \"time\" FROM \"factory_environment\" WHERE \"k_timestamp\" >= $__timeFrom AND \"k_timestamp\" <= $__timeTo GROUP BY \"workshop_id\"" }
+  "rawSql": "SELECT \"workshop_id\", last(\"env_temperature\") AS \"latest_env_temperature\", last(\"k_timestamp\") AS \"time\" FROM \"example_environment\" WHERE \"k_timestamp\" >= $__timeFrom AND \"k_timestamp\" <= $__timeTo GROUP BY \"workshop_id\"" }
 ```
 
 `window`（TIME/SESSION/EVENT/COUNT/STATE_WINDOW）：模板字段 `windowType` / `windowInterval` / `windowSlide` / `eventStartCond` / `eventEndCond`，同样按 `sqlBuilder.ts` 的 `buildWindowSql` 样式补 `rawSql`。
@@ -253,13 +253,13 @@ API 层面没有专门的"分享接口"，链接由 dashboard URL 拼参数而�
 ```bash
 # 1. 建数据源
 curl -u admin:admin -H 'Content-Type: application/json' -X POST http://localhost:3001/api/datasources -d '{
-  "name": "KWDB-Factory-API", "type": "lumingsun-kwdbtsdb-datasource", "access": "proxy",
-  "uid": "kwdb-factory-api",
-  "jsonData": {"host": "10.110.105.80", "port": 26267, "database": "factory", "user": "root", "sslMode": "disable"},
+  "name": "KWDB-API", "type": "lumingsun-kwdbtsdb-datasource", "access": "proxy",
+  "uid": "kwdb-api",
+  "jsonData": {"host": "db.example.com", "port": 26257, "database": "example_db", "user": "readonly_user", "sslMode": "disable"},
   "secureJsonData": {"password": ""}
 }'
 # 2. 验证健康
-curl -u admin:admin http://localhost:3001/api/datasources/uid/kwdb-factory-api/health
+curl -u admin:admin http://localhost:3001/api/datasources/uid/kwdb-api/health
 # 3. 建 dashboard（payload 含 4 种 target：raw time_bucket / downsampling / latest / raw table）
 # 见 §4 示例，组装好的 dashboard JSON POST /api/dashboards/db
 # 4. 拼分享/嵌入链接
@@ -275,17 +275,17 @@ curl -u admin:admin http://localhost:3001/api/datasources/uid/kwdb-factory-api/h
 | `unknown signature: time_bucket(STRING, TIMESTAMPTZ)` | `time_bucket` 参数顺序写反 | 时间列在前 |
 | 查询成功但 0 行 | 字符串过滤条件大小写不匹配 | 用 `tag-values` 检查真实值 |
 
-## 11. MCP Server 封装（推荐）
+## 11. MCP Server 封装（可选，不在本仓库）
 
-以上 API 能力已封装为 MCP server：`../grafana-mcp-kwdb/`（Streamable HTTP，`POST /mcp`）。AI 客户端可直接调用 16 个工具完成本文件的全部流程，并自带：
+> 本仓库不包含 MCP server 的实现；本节只描述一种可选的封装方式，代码不在这个仓库里。
+
+可以把上述 API 封装成 MCP server（例如 Streamable HTTP，`POST /mcp`），让 AI 客户端直接调用工具完成本文件的流程。封装层需要自行负责：
 
 - 模板模式自动补 `rawSql`（与 UI 保存等价，避免 §5 的坑）
-- 参数 zod 校验 + `aggregation` 白名单（防 SQL 注入）
-- 只读守卫（与插件后端逐行一致）
-- dashboard 写保护（仅 `mcp-*` uid / `mcp-managed` tag）
-- `save_dashboard` 自动绑定 datasource（不再依赖 org 默认数据源）
-
-用法见 `../grafana-mcp-kwdb/README.md`。
+- 参数校验 + `aggregation` 白名单（防 SQL 注入）
+- 只读守卫（与插件后端的规则保持一致）
+- dashboard 写保护（例如只允许 `mcp-*` uid / `mcp-managed` tag）
+- 保存 dashboard 时自动绑定 datasource（不依赖 org 默认数据源）
 
 ## 12. 待改进项（插件侧）
 

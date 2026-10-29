@@ -1,11 +1,12 @@
 # Builds and publishes a plugin archive when a version tag is pushed.
 #
 # The steps are spelled out explicitly (instead of using
-# grafana/plugin-actions/build-plugin) so every action is pinned to a commit
-# and the build is auditable: frontend build, mage buildAll for the backend,
-# optional signing, packaging, a blocking run of the Grafana plugin validator,
-# and the GitHub release. The validator is a hard gate again now that
-# create-plugin 7.16 replaced eslint-webpack-plugin with
+# grafana/plugin-actions/build-plugin) so the build is auditable: frontend build,
+# mage buildAll for the backend, optional signing, a tag/version consistency
+# check, packaging, a blocking run of the Grafana plugin validator, and the
+# GitHub release. Official actions/* use Dependabot-maintained major-version
+# tags; third-party actions are pinned to commit SHAs. The validator is a hard
+# gate again now that create-plugin 7.16 replaced eslint-webpack-plugin with
 # diagnostics-webpack-plugin, which removed the `braces` dependency that used
 # to fail osv-scanner.
 name: Release
@@ -35,6 +36,16 @@ jobs:
         with:
           node-version: '22'
           cache: 'yarn'
+
+      - name: Verify tag matches package.json version
+        run: |
+          set -euo pipefail
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "v${PKG_VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version v${PKG_VERSION}."
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} matches package.json version v${PKG_VERSION}."
 
       - name: Install dependencies
         run: |
@@ -73,7 +84,7 @@ jobs:
 
           mv dist "${PLUGIN_ID}"
           zip -r "${ARCHIVE}" "${PLUGIN_ID}" >/dev/null
-          sha1sum "${ARCHIVE}" | cut -d' ' -f1 > "${ARCHIVE}.sha1"
+          sha256sum "${ARCHIVE}" | cut -d' ' -f1 > "${ARCHIVE}.sha256"
 
           echo "archive=${ARCHIVE}" >> "$GITHUB_OUTPUT"
           echo "plugin-id=${PLUGIN_ID}" >> "$GITHUB_OUTPUT"
@@ -99,6 +110,7 @@ jobs:
           ' CHANGELOG.md > release-notes.md || true
 
           if [ ! -s release-notes.md ]; then
+            echo "::warning::CHANGELOG.md has no section for version ${VERSION}; using generic release notes."
             echo "See CHANGELOG.md for the list of changes." > release-notes.md
           fi
 
@@ -115,7 +127,7 @@ jobs:
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             "${{ steps.package.outputs.archive }}" \
-            "${{ steps.package.outputs.archive }}.sha1" \
+            "${{ steps.package.outputs.archive }}.sha256" \
             --title "${GITHUB_REF_NAME}" \
             --notes-file release-body.md \
             --verify-tag

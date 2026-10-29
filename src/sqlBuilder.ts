@@ -2,26 +2,40 @@ import type { KwdbInterpolateMode, KwdbQuery, MetricSpec } from './types';
 
 const INDENT = '       ';
 
+/** Aggregations emitted as `fn(column)`. `none` selects the bare column. */
+const AGGREGATION_FUNCTIONS = ['avg', 'sum', 'count', 'min', 'max', 'stddev'] as const;
+
+const LATEST_FUNCTIONS = ['last', 'last_row', 'first', 'first_row'] as const;
+
+type LatestFunction = (typeof LATEST_FUNCTIONS)[number];
+
 function quoteIdent(identifier: string): string {
   return `"${identifier.replace(/"/g, '""')}"`;
 }
 
 /**
- * Quotes a possibly schema-qualified identifier such as `db.table`.
+ * Splits a possibly schema-qualified name into its identifier parts.
  *
- * Dots are only treated as separators when they are outside double quotes, so
- * an identifier that legitimately contains a dot (`"my.table"`) stays a single
- * quoted identifier instead of being rewritten into `"my"."table"`.
+ * Double quotes are treated as identifier-quoting syntax: a dot inside quotes
+ * belongs to the name, and `""` is an escaped quote. Returns `null` when the
+ * quotes are unbalanced, so the caller can treat the whole input as one
+ * literal identifier (that is what a name containing a quote character looks
+ * like).
  */
-function quoteQualified(name: string): string {
+function splitQualifiedName(name: string): string[] | null {
   const parts: string[] = [];
   let current = '';
   let inQuotes = false;
 
-  for (const char of name) {
+  for (let index = 0; index < name.length; index += 1) {
+    const char = name[index];
     if (char === '"') {
+      if (inQuotes && name[index + 1] === '"') {
+        current += '"';
+        index += 1;
+        continue;
+      }
       inQuotes = !inQuotes;
-      current += char;
       continue;
     }
     if (char === '.' && !inQuotes) {
@@ -31,13 +45,31 @@ function quoteQualified(name: string): string {
     }
     current += char;
   }
-  parts.push(current);
 
-  return parts
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map(quoteIdent)
-    .join('.');
+  if (inQuotes) {
+    return null;
+  }
+
+  parts.push(current);
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+/**
+ * Quotes a possibly schema-qualified identifier such as `db.table`.
+ *
+ * Dots are only treated as separators when they are outside double quotes:
+ * `my.table` becomes `"my"."table"`, `"my.table"` stays a single quoted
+ * identifier named `my.table`, and `db."my.table"` keeps both parts. An
+ * unbalanced quote makes the whole input a single literal name, so a quote
+ * character in a table name is escaped (`sen"sors` -> `"sen""sors"`).
+ */
+function quoteQualified(name: string): string {
+  const trimmed = name.trim();
+  const parts = splitQualifiedName(trimmed);
+  if (!parts || parts.length === 0) {
+    return quoteIdent(trimmed);
+  }
+  return parts.map(quoteIdent).join('.');
 }
 
 function quoteString(value: string): string {
@@ -72,6 +104,23 @@ function interpolateModeLiteral(query: KwdbQuery): string {
   return quoteString(mode);
 }
 
+function isSupportedAggregation(value: unknown): value is MetricSpec['aggregation'] {
+  return value === 'none' || (AGGREGATION_FUNCTIONS as readonly string[]).includes(value as string);
+}
+
+/**
+ * A dashboard JSON file is not type-checked, so an aggregation outside the
+ * supported union has to be rejected instead of being spliced into the
+ * statement verbatim.
+ */
+function metricsUseSupportedAggregations(metrics: MetricSpec[]): boolean {
+  return metrics.every((metric) => isSupportedAggregation(metric.aggregation));
+}
+
+function normalizeLatestFunc(value: unknown): LatestFunction | null {
+  return (LATEST_FUNCTIONS as readonly string[]).includes(value as string) ? (value as LatestFunction) : null;
+}
+
 function aggregationExpr(metric: MetricSpec): string {
   const column = metric.column?.trim() ?? '';
   if (metric.aggregation === 'none') {
@@ -82,8 +131,8 @@ function aggregationExpr(metric: MetricSpec): string {
 
 /**
  * Builds the implicit alias for a metric. Only reached without an explicit
- * alias and with an aggregation, because both call sites return early when the
- * aggregation is `none` and no alias was given.
+ * alias, and never with aggregation `none`: both call sites return the bare
+ * expression early in that case (gapfill coerces `none` to `avg` first).
  */
 function metricAlias(metric: MetricSpec, prefix: string): string {
   return `${prefix}_${metric.column?.trim() ?? ''}`;
@@ -98,24 +147,30 @@ function metricExpr(metric: MetricSpec): string {
   return `${expr} AS ${quoteIdent(alias || metricAlias(metric, metric.aggregation))}`;
 }
 
+/**
+ * Gapfill cannot take a bare column: `interpolate()` requires an aggregate
+ * function as its first argument ("the first parameter of interpolate must be
+ * agg func"). Queries saved while `none` was still offered for gapfill are
+ * corrected to `avg` instead of emitting a statement KWDB rejects.
+ */
+export function coerceGapfillMetric(metric: MetricSpec): MetricSpec {
+  return metric.aggregation === 'none' ? { ...metric, aggregation: 'avg' } : metric;
+}
+
 function gapfillMetricExpr(metric: MetricSpec, query: KwdbQuery): string {
-  const inner = aggregationExpr(metric);
-  const expr = `interpolate(${inner}, ${interpolateModeLiteral(query)})`;
-  const alias = metric.alias?.trim();
-  if (metric.aggregation === 'none' && !alias) {
-    return expr;
-  }
-  return `${expr} AS ${quoteIdent(alias || metricAlias(metric, metric.aggregation))}`;
+  const expr = `interpolate(${aggregationExpr(metric)}, ${interpolateModeLiteral(query)})`;
+  return `${expr} AS ${quoteIdent(metric.alias?.trim() || metricAlias(metric, metric.aggregation))}`;
 }
 
-function latestMetricExpr(metric: MetricSpec, latestFunc: KwdbQuery['latestFunc']): string {
-  const func = latestFunc ?? 'last';
-  const expr = `${func}(${quoteIdent(metric.column?.trim() ?? '')})`;
-  return `${expr} AS ${quoteIdent(metric.alias?.trim() || `latest_${metric.column?.trim() ?? ''}`)}`;
+function latestMetricExpr(metric: MetricSpec, latestFunc: LatestFunction): string {
+  const column = quoteIdent(metric.column?.trim() ?? '');
+  return `${latestFunc}(${column}) AS ${quoteIdent(metric.alias?.trim() || `latest_${metric.column?.trim() ?? ''}`)}`;
 }
 
-function latestTimeExpr(query: KwdbQuery, timeColumn: string): string {
-  const func = query.latestFunc === 'first' || query.latestFunc === 'first_row' ? 'first' : 'last';
+function latestTimeExpr(latestFunc: LatestFunction, timeColumn: string): string {
+  // `*_row` variants include NULL rows for the value, but the time column
+  // cannot be NULL in a time-series table, so plain first()/last() is used.
+  const func = latestFunc === 'first' || latestFunc === 'first_row' ? 'first' : 'last';
   return `${func}(${quoteIdent(timeColumn)}) AS "time"`;
 }
 
@@ -133,7 +188,7 @@ function selectLines(items: string[]): string[] {
   });
 }
 
-function groupAndOrderBy(tags: string[], rawColumns: string[] = []): { groupBy: string[]; orderBy: string[] } {
+function groupAndOrderBy(tags: string[], rawColumns: string[]): { groupBy: string[]; orderBy: string[] } {
   const quotedTags = tags.map(quoteIdent);
   return {
     groupBy: ['"time"', ...quotedTags, ...rawColumns],
@@ -152,7 +207,8 @@ function validMetrics(query: KwdbQuery): MetricSpec[] {
  * the GROUP BY clause or be used in an aggregate function"), so these columns
  * have to be added to the GROUP BY list instead of being dropped. Verified
  * against KWDB 3.3.0: `GROUP BY "time", "current_val"` is accepted by
- * time_bucket, time_bucket_gapfill and every window function.
+ * time_bucket and every window function. Gapfill never reaches this with
+ * `none`, because `none` is coerced to `avg` there.
  */
 function unaggregatedColumns(metrics: MetricSpec[]): string[] {
   const columns: string[] = [];
@@ -172,7 +228,7 @@ export function buildDownsamplingSql(query: KwdbQuery): string {
   const table = query.table?.trim();
   const timeColumn = query.timeColumn?.trim();
   const metrics = validMetrics(query);
-  if (!table || !timeColumn || metrics.length === 0) {
+  if (!table || !timeColumn || metrics.length === 0 || !metricsUseSupportedAggregations(metrics)) {
     return '';
   }
 
@@ -196,8 +252,8 @@ export function buildDownsamplingSql(query: KwdbQuery): string {
 export function buildGapfillSql(query: KwdbQuery): string {
   const table = query.table?.trim();
   const timeColumn = query.timeColumn?.trim();
-  const metrics = validMetrics(query);
-  if (!table || !timeColumn || metrics.length === 0) {
+  const metrics = validMetrics(query).map(coerceGapfillMetric);
+  if (!table || !timeColumn || metrics.length === 0 || !metricsUseSupportedAggregations(metrics)) {
     return '';
   }
 
@@ -222,15 +278,16 @@ export function buildLatestSql(query: KwdbQuery): string {
   const table = query.table?.trim();
   const timeColumn = query.timeColumn?.trim();
   const metrics = validMetrics(query);
-  if (!table || !timeColumn || metrics.length === 0) {
+  const latestFunc = normalizeLatestFunc(query.latestFunc ?? 'last');
+  if (!table || !timeColumn || metrics.length === 0 || !latestFunc || !metricsUseSupportedAggregations(metrics)) {
     return '';
   }
 
   const tags = (query.tags ?? []).map((tag) => tag.trim()).filter(Boolean);
   const items = [
     ...tags.map(quoteIdent),
-    ...metrics.map((metric) => latestMetricExpr(metric, query.latestFunc)),
-    latestTimeExpr(query, timeColumn),
+    ...metrics.map((metric) => latestMetricExpr(metric, latestFunc)),
+    latestTimeExpr(latestFunc, timeColumn),
   ];
   const lines = [
     ...selectLines(items),
@@ -243,19 +300,32 @@ export function buildLatestSql(query: KwdbQuery): string {
   return lines.join('\n');
 }
 
-// Free-form SQL fragments (event and state conditions, window limits) are
-// spliced into the statement verbatim, so anything that could terminate the
-// statement or open a comment is rejected here. The backend read-only guard is
-// the last line of defence; this keeps the editor from producing a statement
-// that only fails deep inside the database.
+// Free-form SQL fragments (event and state conditions) are spliced into the
+// statement verbatim, so anything that could terminate the statement or open a
+// comment is rejected here. The backend read-only guard is the last line of
+// defence; this keeps the editor from producing a statement that only fails
+// deep inside the database.
 const UNSAFE_SQL_FRAGMENT_RE = /;|--|\/\*|\*\//;
 
 function isSafeSqlFragment(fragment: string): boolean {
   return !UNSAFE_SQL_FRAGMENT_RE.test(fragment);
 }
 
-// COUNT_WINDOW arguments are unquoted numbers.
-const NUMERIC_RE = /^\d+(\.\d+)?$/;
+/**
+ * COUNT_WINDOW arguments are positive integers: KWDB declares them as `int8`
+ * row counts, so `10.5` or `0` fails inside the database.
+ */
+function positiveIntArgument(raw: string | undefined): string | null {
+  const value = raw?.trim();
+  if (!value || !/^\d+$/.test(value)) {
+    return null;
+  }
+  const numeric = Number(value);
+  if (!Number.isSafeInteger(numeric) || numeric <= 0) {
+    return null;
+  }
+  return String(numeric);
+}
 
 function windowTimeExpr(query: KwdbQuery): string | null {
   const timeColumn = query.timeColumn?.trim();
@@ -288,15 +358,16 @@ function windowTimeExpr(query: KwdbQuery): string | null {
       // reads 100 while the generated statement is empty, and setting the field
       // to the value it already displays is a no-op for a React controlled
       // input, so the user cannot make the preview appear by typing it in.
-      const limit = query.windowInterval?.trim() || '100';
-      if (!NUMERIC_RE.test(limit)) {
+      const limit = positiveIntArgument(query.windowInterval?.trim() || '100');
+      if (!limit) {
         return null;
       }
-      const slide = query.windowSlide?.trim();
-      if (slide && !NUMERIC_RE.test(slide)) {
-        return null;
+      const slideRaw = query.windowSlide?.trim();
+      if (!slideRaw) {
+        return `COUNT_WINDOW(${limit})`;
       }
-      return slide ? `COUNT_WINDOW(${limit}, ${slide})` : `COUNT_WINDOW(${limit})`;
+      const slide = positiveIntArgument(slideRaw);
+      return slide ? `COUNT_WINDOW(${limit}, ${slide})` : null;
     }
     case 'STATE_WINDOW': {
       const expr = query.eventStartCond?.trim();
@@ -315,7 +386,7 @@ export function buildWindowSql(query: KwdbQuery): string {
   const timeColumn = query.timeColumn?.trim();
   const metrics = validMetrics(query);
   const windowExpr = windowTimeExpr(query);
-  if (!table || !timeColumn || metrics.length === 0 || !windowExpr) {
+  if (!table || !timeColumn || metrics.length === 0 || !windowExpr || !metricsUseSupportedAggregations(metrics)) {
     return '';
   }
 

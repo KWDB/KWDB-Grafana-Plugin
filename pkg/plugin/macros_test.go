@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -111,6 +112,49 @@ func TestExpandMacros(t *testing.T) {
 			want: "SELECT '2026-01-01 00:00:00'::TIMESTAMP AS a, 'x' AS b, '2026-01-01 01:00:00'::TIMESTAMP AS c",
 		},
 		{
+			name: "nested macro is expanded from the inside out",
+			sql:  "SELECT * FROM sensors WHERE $__timeFilter($__timeGroup(ts, '5m'))",
+			want: "SELECT * FROM sensors WHERE (time_bucket(ts, '5m') >= '2026-01-01 00:00:00'::TIMESTAMP AND time_bucket(ts, '5m') <= '2026-01-01 01:00:00'::TIMESTAMP)",
+		},
+		{
+			name: "scalar macro nested inside a macro argument",
+			sql:  "SELECT * FROM sensors WHERE $__timeFilter(CAST($__timeFrom AS TIMESTAMP))",
+			want: "SELECT * FROM sensors WHERE (CAST('2026-01-01 00:00:00'::TIMESTAMP AS TIMESTAMP) >= '2026-01-01 00:00:00'::TIMESTAMP AND CAST('2026-01-01 00:00:00'::TIMESTAMP AS TIMESTAMP) <= '2026-01-01 01:00:00'::TIMESTAMP)",
+		},
+		{
+			// The ')' inside the dollar-quoted literal must not terminate the
+			// macro argument list early.
+			name: "paren inside a dollar-quoted macro argument",
+			sql:  `SELECT $__timeFilter($q$)x$q$) AS v`,
+			want: `SELECT ($q$)x$q$ >= '2026-01-01 00:00:00'::TIMESTAMP AND $q$)x$q$ <= '2026-01-01 01:00:00'::TIMESTAMP) AS v`,
+		},
+		{
+			// The comma inside the dollar-quoted literal must not split the
+			// argument list.
+			name: "comma inside a dollar-quoted time group argument",
+			sql:  `SELECT $__timeGroup(t, $q$5,m$q$)`,
+			want: `SELECT time_bucket(t, $q$5,m$q$)`,
+		},
+		{
+			// Valid PostgreSQL identifiers may contain '$' after the first
+			// byte, so this is not a macro occurrence.
+			name: "scalar macro suffix of an identifier is not expanded",
+			sql:  "SELECT ts$__timeFrom FROM t",
+			want: "SELECT ts$__timeFrom FROM t",
+		},
+		{
+			name: "scalar macro followed by an identifier byte is not expanded",
+			sql:  "SELECT $__timeFromx FROM t",
+			want: "SELECT $__timeFromx FROM t",
+		},
+		{
+			// A dollar-quoted literal whose tag is spelled like a macro is
+			// still a literal, not a macro occurrence.
+			name: "dollar-quote tag named like a scalar macro",
+			sql:  `SELECT $__timeFrom$body$__timeFrom$ AS v`,
+			want: `SELECT $__timeFrom$body$__timeFrom$ AS v`,
+		},
+		{
 			name: "no macros",
 			sql:  "SELECT 1",
 			want: "SELECT 1",
@@ -135,5 +179,23 @@ func TestExpandMacrosKeepsSubsecondPrecision(t *testing.T) {
 	want := "SELECT '2026-01-01 00:00:00.123456789'::TIMESTAMP AS start, '2026-01-01 00:00:01.987654321'::TIMESTAMP AS end"
 	if got != want {
 		t.Errorf("ExpandMacros() = %q, want %q", got, want)
+	}
+}
+
+// TestExpandMacrosNestingIsBounded makes sure pathological nesting terminates
+// instead of recursing forever. Past the limit the macro text is left in place
+// so the database reports the problem.
+func TestExpandMacrosNestingIsBounded(t *testing.T) {
+	const depth = maxMacroNesting + 4
+	sql := "SELECT " + strings.Repeat("$__timeFilter(", depth) + "ts" + strings.Repeat(")", depth)
+	got := ExpandMacros(sql, backend.TimeRange{
+		From: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		To:   time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC),
+	})
+	if got == "" {
+		t.Fatal("ExpandMacros returned an empty statement")
+	}
+	if !strings.Contains(got, "$__timeFilter") {
+		t.Fatalf("expected the over-deep macro to be left in place, got %q", got)
 	}
 }

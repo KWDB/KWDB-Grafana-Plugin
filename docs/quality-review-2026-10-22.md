@@ -4,7 +4,7 @@
 - 评审对象：`lumingsun-kwdbtsdb-datasource`（`kwdb-tsdb-datasource`，`v1.2.0-1-g8824cd1`）
 - 评审角色：架构与扩展性 / 应用安全 / 验收边界与质量（三方独立评审 + 主理人交叉核验）
 - 评审方式：只读源码评审 + 本地测试执行 + 真实 Grafana 13.1.0 与真实 KWDB 实例实测
-- 运行时环境：Grafana 13.1.0（`localhost:3001`，dist 挂载加载）；KWDB `10.110.105.80:26267/factory`，`equipment_telemetry` 4,683,904 行
+- 运行时环境：Grafana 13.1.0（`localhost:3001`，dist 挂载加载）；KWDB `db.example.com:26257/example_db`，`equipment_telemetry` 4,683,904 行
 
 > 说明：本报告区分「已执行」「读码事实」「推断」「未验证」。凡未实际执行过的检查，一律标注为未验证，不当作通过。
 

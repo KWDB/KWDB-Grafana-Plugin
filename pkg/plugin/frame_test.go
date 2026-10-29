@@ -220,8 +220,8 @@ func TestRowsToFrameTimeSeriesTimeFieldLeads(t *testing.T) {
 	if got := frame.Fields[1].Name; got != "latest_current_val" {
 		t.Errorf("second field name = %q, want latest_current_val", got)
 	}
-	if got := frame.Fields[0].At(0).(time.Time); !got.Equal(t1) {
-		t.Errorf("first time = %v, want %v (rows must be sorted by time)", got, t1)
+	if got, ok := frame.Fields[0].At(0).(time.Time); !ok || !got.Equal(t1) {
+		t.Fatalf("first time = %v (type %T), want %v (rows must be sorted by time)", frame.Fields[0].At(0), frame.Fields[0].At(0), t1)
 	}
 	if frame.TimeSeriesSchema().Type != data.TimeSeriesTypeWide {
 		t.Errorf("schema type = %v, want wide", frame.TimeSeriesSchema().Type)
@@ -229,7 +229,10 @@ func TestRowsToFrameTimeSeriesTimeFieldLeads(t *testing.T) {
 }
 
 // The same statement with a tag column goes through the long-to-wide path,
-// which hoists the time field itself; both paths must agree on the order.
+// which hoists the time field itself. This test guards that interaction: it
+// cannot fail if moveTimeFirst is removed (LongToWide already leads with time),
+// so it is not the regression test for moveTimeFirst - see
+// TestMoveTimeFirstMovesTimeColumnToFront.
 func TestRowsToFrameTimeSeriesTimeFieldLeadsWithTag(t *testing.T) {
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	rows := &mockRows{
@@ -447,5 +450,94 @@ func isNilValue(v any) bool {
 		return rv.IsNil()
 	default:
 		return false
+	}
+}
+
+// TestMoveTimeFirstMovesTimeColumnToFront is the direct regression test for the
+// latest-values fix: moveTimeFirst must put the time column first and keep
+// every other column in its original relative order.
+func TestMoveTimeFirstMovesTimeColumnToFront(t *testing.T) {
+	plans := []columnPlan{
+		{name: "latest_current_val"},
+		{name: "device_id"},
+		{name: "time"},
+	}
+	got := moveTimeFirst(plans, 2)
+	if len(got) != len(plans) {
+		t.Fatalf("plan count = %d, want %d", len(got), len(plans))
+	}
+	wantNames := []string{"time", "latest_current_val", "device_id"}
+	for i, want := range wantNames {
+		if got[i].name != want {
+			t.Fatalf("plan[%d] = %q, want %q", i, got[i].name, want)
+		}
+	}
+	// The original plans slice must not be mutated.
+	if plans[0].name != "latest_current_val" {
+		t.Fatalf("moveTimeFirst mutated its input: %#v", plans)
+	}
+
+	// A time column that is already first is returned untouched.
+	alreadyFirst := []columnPlan{{name: "time"}, {name: "v"}}
+	if got := moveTimeFirst(alreadyFirst, 0); got[0].name != "time" || got[1].name != "v" {
+		t.Fatalf("moveTimeFirst(timeIdx=0) = %#v", got)
+	}
+}
+
+// TestRowsToFramesTruncationNoticeOnEverySplitFrame makes sure every frame
+// produced by splitLatestFrames carries the truncation notice, not only the
+// first one.
+func TestRowsToFramesTruncationNoticeOnEverySplitFrame(t *testing.T) {
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	rows := &mockRows{
+		fields: []pgconn.FieldDescription{
+			{Name: "device_id", DataTypeOID: 25},
+			{Name: "latest_current_val", DataTypeOID: 701},
+			{Name: "k_timestamp", DataTypeOID: 1184},
+		},
+		rows: [][]any{
+			{"A", 1.0, t1},
+			{"B", 2.0, t1},
+			{"C", 3.0, t1},
+			{"D", 4.0, t1},
+		},
+	}
+
+	frames, err := RowsToFrames(rows, FrameOptions{
+		Format: "table", Mode: "latest", TimeColumn: "k_timestamp",
+		Tags: []string{"device_id"}, MaxRows: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frames) < 2 {
+		t.Fatalf("expected the truncated result to split into several frames, got %d", len(frames))
+	}
+	for i, frame := range frames {
+		if frame.Meta == nil || len(frame.Meta.Notices) == 0 {
+			t.Errorf("frame[%d] (%q) has no truncation notice", i, frame.Name)
+			continue
+		}
+		if !strings.Contains(frame.Meta.Notices[0].Text, "truncated at 2 rows") {
+			t.Errorf("frame[%d] notice = %q, want a truncation message", i, frame.Meta.Notices[0].Text)
+		}
+	}
+}
+
+// A configured time column that exists but is not a timestamp must produce a
+// readable error instead of the generic "could not convert frame" one.
+func TestRowsToFrameConfiguredTimeColumnIsNotATimestamp(t *testing.T) {
+	rows := &mockRows{
+		fields: []pgconn.FieldDescription{
+			{Name: "k_timestamp", DataTypeOID: 25},
+			{Name: "value", DataTypeOID: 701},
+		},
+		rows: [][]any{
+			{"not-a-time", 1.0},
+		},
+	}
+	_, err := RowsToFrame(rows, "time_series", "k_timestamp", nil)
+	if err == nil || !strings.Contains(err.Error(), "not a timestamp column") {
+		t.Fatalf("expected a readable time column type error, got %v", err)
 	}
 }

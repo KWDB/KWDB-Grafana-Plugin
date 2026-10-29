@@ -28,6 +28,19 @@ function initialQuery(query: Props['query']): KwdbVariableQuery {
   }
 }
 
+/**
+ * Renders the definition string Grafana shows next to the variable. An
+ * incomplete query has no renderable definition yet; that is not an error, so
+ * it yields an empty string instead of throwing.
+ */
+function safeDefinition(query: KwdbVariableQuery): string {
+  try {
+    return buildVariableQueryString(query);
+  } catch {
+    return '';
+  }
+}
+
 export function VariableQueryEditor({ query, datasource, onChange }: Props) {
   const [state, setState] = useState<KwdbVariableQuery>(() => initialQuery(query));
   const [tables, setTables] = useState<{ items: TableInfo[]; loading: boolean }>({ items: [], loading: true });
@@ -86,7 +99,12 @@ export function VariableQueryEditor({ query, datasource, onChange }: Props) {
       next.column = undefined;
     }
     setState(next);
-    onChange(next, buildVariableQueryString(next));
+    // The editor is legitimately in an incomplete state while the user fills it
+    // in (e.g. a table is selected but the tag column is not yet). Building the
+    // definition string must never throw here: an exception thrown from a React
+    // event handler skips `onChange`, so the change would never reach the
+    // variable model and the panel would keep running the previous query.
+    onChange(next, safeDefinition(next));
   };
 
   // Only tag columns can provide distinct values for tag_values(table, column).
@@ -116,7 +134,7 @@ export function VariableQueryEditor({ query, datasource, onChange }: Props) {
             isLoading={tables.loading}
             options={tables.items.map((table) => ({ label: table.name, value: table.name }))}
             value={state.table ? { label: state.table, value: state.table } : undefined}
-            onChange={(item) => update({ table: item.value ?? undefined })}
+            onChange={(item) => update({ table: item?.value ?? undefined })}
             placeholder="Select table"
             isClearable
             menuShouldPortal={false}
@@ -131,7 +149,7 @@ export function VariableQueryEditor({ query, datasource, onChange }: Props) {
             isLoading={Boolean(state.table) && columns.loading}
             options={tagOptions}
             value={state.column ? { label: state.column, value: state.column } : undefined}
-            onChange={(item) => update({ column: item.value ?? undefined })}
+            onChange={(item) => update({ column: item?.value ?? undefined })}
             placeholder={state.table ? 'Select tag column' : 'Select a table first'}
             isClearable
             disabled={!state.table}

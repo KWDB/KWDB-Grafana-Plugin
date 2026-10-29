@@ -33,12 +33,15 @@ func TestValidate(t *testing.T) {
 		errMatch string
 	}{
 		{name: "defaults are valid", patch: nil},
-		{name: "empty ssl mode is treated as disable", patch: func(s *DataSourceSettings) { s.SSLMode = "" }},
+		{name: "empty settings are valid (defaults are applied later)", patch: func(s *DataSourceSettings) { *s = DataSourceSettings{} }},
+		{name: "empty ssl mode is accepted", patch: func(s *DataSourceSettings) { s.SSLMode = "" }},
 		{name: "require is valid", patch: func(s *DataSourceSettings) { s.SSLMode = "require" }},
 		{name: "verify-ca is valid", patch: func(s *DataSourceSettings) { s.SSLMode = "verify-ca" }},
 		{name: "verify-full is valid", patch: func(s *DataSourceSettings) { s.SSLMode = "verify-full" }},
 
-		{name: "port zero", patch: func(s *DataSourceSettings) { s.Port = 0 }, wantErr: true, errMatch: "port must be between 1 and 65535"},
+		// Validate runs before applyDefaults, so zero means "not configured"
+		// and is legal; only non-zero out-of-range ports are rejected.
+		{name: "port zero means unset", patch: func(s *DataSourceSettings) { s.Port = 0 }},
 		{name: "port negative", patch: func(s *DataSourceSettings) { s.Port = -1 }, wantErr: true, errMatch: "port must be between 1 and 65535"},
 		{name: "port too large", patch: func(s *DataSourceSettings) { s.Port = 65536 }, wantErr: true, errMatch: "port must be between 1 and 65535"},
 
@@ -46,10 +49,15 @@ func TestValidate(t *testing.T) {
 		{name: "sslmode prefer is rejected", patch: func(s *DataSourceSettings) { s.SSLMode = "prefer" }, wantErr: true, errMatch: "unsupported sslMode"},
 		{name: "sslmode typo is rejected", patch: func(s *DataSourceSettings) { s.SSLMode = "verify-full " }, wantErr: true, errMatch: "unsupported sslMode"},
 
-		{name: "maxConns zero", patch: func(s *DataSourceSettings) { s.MaxConns = 0 }, wantErr: true, errMatch: "maxConns must be at least 1"},
-		{name: "maxConnLifetime negative", patch: func(s *DataSourceSettings) { s.MaxConnLifetime = -1 }, wantErr: true, errMatch: "maxConnLifetime must not be negative"},
-		{name: "maxConnIdleTime negative", patch: func(s *DataSourceSettings) { s.MaxConnIdleTime = -1 }, wantErr: true, errMatch: "maxConnIdleTime must not be negative"},
-		{name: "connectTimeout negative", patch: func(s *DataSourceSettings) { s.ConnectTimeout = -1 }, wantErr: true, errMatch: "connectTimeout must not be negative"},
+		// Pool options: zero = use the default, negative is always invalid.
+		{name: "maxConns zero means default", patch: func(s *DataSourceSettings) { s.MaxConns = 0 }},
+		{name: "maxConns negative is rejected", patch: func(s *DataSourceSettings) { s.MaxConns = -1 }, wantErr: true, errMatch: "maxConns must not be negative"},
+		{name: "maxConnLifetime zero means default", patch: func(s *DataSourceSettings) { s.MaxConnLifetime = 0 }},
+		{name: "maxConnLifetime negative is rejected", patch: func(s *DataSourceSettings) { s.MaxConnLifetime = -1 }, wantErr: true, errMatch: "maxConnLifetime must not be negative"},
+		{name: "maxConnIdleTime zero means default", patch: func(s *DataSourceSettings) { s.MaxConnIdleTime = 0 }},
+		{name: "maxConnIdleTime negative is rejected", patch: func(s *DataSourceSettings) { s.MaxConnIdleTime = -1 }, wantErr: true, errMatch: "maxConnIdleTime must not be negative"},
+		{name: "connectTimeout zero means default", patch: func(s *DataSourceSettings) { s.ConnectTimeout = 0 }},
+		{name: "connectTimeout negative is rejected", patch: func(s *DataSourceSettings) { s.ConnectTimeout = -1 }, wantErr: true, errMatch: "connectTimeout must not be negative"},
 
 		// Zero and negative query timeout / max rows are meaningful ("use the
 		// default" and "disable the limit") and must not be rejected.
