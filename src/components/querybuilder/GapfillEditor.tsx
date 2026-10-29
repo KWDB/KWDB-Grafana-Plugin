@@ -45,7 +45,12 @@ export function GapfillEditor({ datasource, query, onChange }: Props) {
     onChange(next);
   };
 
-  const metrics: MetricSpec[] = query.metrics?.length ? query.metrics : [{ column: '', aggregation: 'avg' }];
+  // A query saved before "none" was excluded from the gapfill dropdown would
+  // still carry it; interpolate() cannot take a bare column, so it is coerced
+  // to the default aggregation instead of emitting a statement KWDB rejects.
+  const metrics: MetricSpec[] = (
+    query.metrics?.length ? query.metrics : [{ column: '', aggregation: 'avg' as const }]
+  ).map((metric) => (metric.aggregation === 'none' ? { ...metric, aggregation: 'avg' as const } : metric));
 
   const updateMetric = (index: number, metric: MetricSpec) => {
     updateQuery({ metrics: metrics.map((item, itemIndex) => (itemIndex === index ? metric : item)) });
@@ -116,6 +121,10 @@ export function GapfillEditor({ datasource, query, onChange }: Props) {
               metric={metric}
               onChange={(nextMetric) => updateMetric(index, nextMetric)}
               onRemove={metrics.length > 1 ? () => removeMetric(index) : undefined}
+              // interpolate() requires an aggregate function, so a bare column
+              // cannot be gap-filled: KWDB rejects it with "the first parameter
+              // of interpolate must be agg func".
+              excludeAggregations={['none']}
             />
           ))}
           <Button

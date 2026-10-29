@@ -247,7 +247,7 @@ describe('QueryEditor', () => {
     fireEvent.change(constantInput, { target: { value: '42' } });
 
     expect((screen.getByTestId('sql-preview-editor') as HTMLTextAreaElement).value).toContain(
-      'interpolate(avg("temperature"), 42)'
+      'interpolate(avg("temperature"), \'42\')'
     );
   });
 });

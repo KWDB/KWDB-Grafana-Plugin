@@ -107,16 +107,41 @@ describe('buildDownsamplingSql', () => {
     expect(sql).toContain(`min("voltage") AS "min_voltage"`);
   });
 
-  it('keeps a bare quoted column when aggregation is none and no alias is set', () => {
+  // KWDB rejects a bare column in a grouped SELECT ("column must appear in the
+  // GROUP BY clause"), so the column is added to GROUP BY instead of dropped.
+  it('adds a bare column to GROUP BY when aggregation is none and no alias is set', () => {
     const sql = buildDownsamplingSql(query({ metrics: [{ column: 'voltage', aggregation: 'none' }] }));
     expect(sql).toContain(`       "voltage"`);
     expect(sql).not.toContain(`none("voltage")`);
     expect(sql).not.toContain('"voltage" AS');
+    expect(sql).toContain('GROUP BY "time", "voltage"');
+    expect(sql).toContain('ORDER BY "time", "voltage"');
   });
 
-  it('aliases a none-aggregated column when an alias is provided', () => {
+  it('aliases a none-aggregated column and still groups by it', () => {
     const sql = buildDownsamplingSql(query({ metrics: [{ column: 'voltage', aggregation: 'none', alias: 'volts' }] }));
     expect(sql).toContain(`"voltage" AS "volts"`);
+    expect(sql).toContain('GROUP BY "time", "voltage"');
+  });
+
+  it('does not duplicate a repeated bare column in GROUP BY', () => {
+    const sql = buildDownsamplingSql(
+      query({
+        metrics: [
+          { column: 'voltage', aggregation: 'none' },
+          { column: 'voltage', aggregation: 'none' },
+        ],
+      })
+    );
+    expect(sql).toContain('GROUP BY "time", "voltage"');
+    expect(sql).not.toContain('GROUP BY "time", "voltage", "voltage"');
+  });
+
+  it('keeps grouped columns after the tags', () => {
+    const sql = buildDownsamplingSql(
+      query({ tags: ['device_id'], metrics: [{ column: 'voltage', aggregation: 'none' }] })
+    );
+    expect(sql).toContain('GROUP BY "time", "device_id", "voltage"');
   });
 
   it('prefers an explicit alias over the generated one', () => {
@@ -251,29 +276,41 @@ describe('buildGapfillSql', () => {
     );
   });
 
-  it('renders the constant mode as a numeric literal', () => {
+  // KWDB has no 'constant' keyword: interpolate(expr, 'constant') fails with
+  // "Interpolate/imputation method not supported". The value is emitted as a
+  // quoted numeric string, the form used in the KWDB documentation.
+  it('renders the constant mode as a quoted numeric string', () => {
     const sql = buildGapfillSql(query({ mode: 'gapfill', interpolateMode: 'constant', interpolateConstant: 7 }));
-    expect(sql).toContain(`interpolate(avg("temperature"), 7)`);
-    expect(sql).not.toContain(`interpolate(avg("temperature"), '7')`);
+    expect(sql).toContain(`interpolate(avg("temperature"), '7')`);
+    expect(sql).not.toContain(`interpolate(avg("temperature"), 7)`);
+    expect(sql).not.toContain(`'constant'`);
   });
 
   it('defaults the constant fill value to 0', () => {
     const sql = buildGapfillSql(query({ mode: 'gapfill', interpolateMode: 'constant' }));
-    expect(sql).toContain(`interpolate(avg("temperature"), 0)`);
+    expect(sql).toContain(`interpolate(avg("temperature"), '0')`);
   });
 
   it('coerces a non-finite constant to 0', () => {
     const nan = buildGapfillSql(query({ mode: 'gapfill', interpolateMode: 'constant', interpolateConstant: NaN }));
-    expect(nan).toContain(`interpolate(avg("temperature"), 0)`);
+    expect(nan).toContain(`interpolate(avg("temperature"), '0')`);
     const infinite = buildGapfillSql(
       query({ mode: 'gapfill', interpolateMode: 'constant', interpolateConstant: Number.POSITIVE_INFINITY })
     );
-    expect(infinite).toContain(`interpolate(avg("temperature"), 0)`);
+    expect(infinite).toContain(`interpolate(avg("temperature"), '0')`);
   });
 
   it('accepts a negative constant', () => {
     const sql = buildGapfillSql(query({ mode: 'gapfill', interpolateMode: 'constant', interpolateConstant: -1.5 }));
-    expect(sql).toContain(`interpolate(avg("temperature"), -1.5)`);
+    expect(sql).toContain(`interpolate(avg("temperature"), '-1.5')`);
+  });
+
+  it('quotes a constant that contains a single quote', () => {
+    const sql = buildGapfillSql(
+      query({ mode: 'gapfill', interpolateMode: 'constant', interpolateConstant: Number("1'2") })
+    );
+    // Number("1'2") is NaN, so this only proves the fallback is quoted too.
+    expect(sql).toContain(`interpolate(avg("temperature"), '0')`);
   });
 
   it('falls back to linear for an unknown interpolate mode', () => {
@@ -473,6 +510,31 @@ describe('buildWindowSql', () => {
     const sql = buildWindowSql(query({ mode: 'window', windowType: 'TIME_WINDOW', tags: [] }));
     expect(sql).toContain(`GROUP BY TIME_WINDOW("ts", '1h')`);
     expect(sql).toContain('ORDER BY "time"');
+  });
+
+  // KWDB: "no other columns can follow grouped window function" - the window
+  // expression must stay last in the GROUP BY list.
+  it('places a bare metric column before the window expression in GROUP BY', () => {
+    const sql = buildWindowSql(
+      query({ mode: 'window', windowType: 'TIME_WINDOW', metrics: [{ column: 'temperature', aggregation: 'none' }] })
+    );
+    expect(sql).toContain(`GROUP BY "temperature", TIME_WINDOW("ts", '1h')`);
+    expect(sql).not.toContain(`GROUP BY TIME_WINDOW("ts", '1h'), "temperature"`);
+  });
+
+  it('keeps tags, bare columns and the window expression in that order', () => {
+    const sql = buildWindowSql(
+      query({
+        mode: 'window',
+        windowType: 'TIME_WINDOW',
+        tags: ['device_id'],
+        metrics: [
+          { column: 'temperature', aggregation: 'avg' },
+          { column: 'voltage', aggregation: 'none' },
+        ],
+      })
+    );
+    expect(sql).toContain(`GROUP BY "device_id", "voltage", TIME_WINDOW("ts", '1h')`);
   });
 
   it('rejects event conditions that could terminate the statement or open a comment', () => {

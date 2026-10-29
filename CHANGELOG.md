@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+Found by running the plugin against a live KWDB 3.3.0 instance; none of these
+were reachable with the mock-based unit tests or the CI container dataset.
+
+- Selecting `none` as the aggregation for a downsampling, gapfill or window
+  query produced a statement the database rejects ("column ... must appear in
+  the GROUP BY clause"). Non-aggregated metric columns are now added to the
+  GROUP BY list. For window queries they are placed before the window
+  expression, because KWDB requires a grouped window function to be the last
+  GROUP BY entry. Gapfill cannot take a bare column at all (`interpolate()`
+  requires an aggregate), so the gapfill editor no longer offers `none` and
+  coerces a value left over from an older query to `avg`.
+- Time macros are no longer expanded inside string literals, quoted identifiers
+  or comments. `SELECT 'range: $__timeFilter(ts)'` used to be rewritten into a
+  broken statement that failed with a syntax error inside the literal.
+- A latest-values query without tags now produces a frame whose first field is
+  the time column. The builder selects the metrics before the time column, and
+  while the long-to-wide conversion hoists the time field for frames with tag
+  columns, a frame without them is already wide and was left with the time field
+  last, which Grafana treats as a table.
+
+### Changed
+
+- The constant interpolation fill value is emitted as a quoted string
+  (`interpolate(avg(col), '0')`), the form used in the KWDB documentation,
+  rather than a bare numeric literal. Both are accepted by the database.
+
+### Documentation
+
+- `docs/real-server-verification-2026-10-29.md` records the first end-to-end
+  run against a live KWDB instance (`10.110.105.80:26267/factory`,
+  `equipment_telemetry`, 1,002,988 rows): 56 generated SQL statements, the Go
+  backend pipeline, 21/21 Playwright specs and the alerting path. It also lists
+  what is still unverified, TLS above all.
+
 ## v1.2.3 (2026-10-28)
 
 ### Fixed

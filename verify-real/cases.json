@@ -1,0 +1,473 @@
+{
+  "cases": [
+    {
+      "id": "DS-01",
+      "feature": "downsampling/basic",
+      "expect": "rows>0, cols: time, avg_current_val",
+      "sql": "SELECT time_bucket(\"k_timestamp\", '5m') AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "DS-02",
+      "feature": "downsampling/tags",
+      "expect": "rows = time buckets x 4 devices",
+      "sql": "SELECT time_bucket(\"k_timestamp\", '5m') AS \"time\",\n       \"device_id\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\", \"device_id\"\nORDER BY \"time\", \"device_id\""
+    },
+    {
+      "id": "DS-03",
+      "feature": "downsampling/multi-metric",
+      "expect": "avg+max+count in one SELECT",
+      "sql": "SELECT time_bucket(\"k_timestamp\", '5m') AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\",\n       max(\"voltage\") AS \"max_voltage\",\n       count(\"rpm\") AS \"count_rpm\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "DS-04",
+      "feature": "downsampling/blank-interval",
+      "expect": "interval falls back to 5m",
+      "sql": "SELECT time_bucket(\"k_timestamp\", '5m') AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "DS-05",
+      "feature": "downsampling/interval-trimmed",
+      "expect": "interval trimmed",
+      "sql": "SELECT time_bucket(\"k_timestamp\", '1h') AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "DS-06",
+      "feature": "downsampling/agg-none-no-alias",
+      "expect": "bare column added to GROUP BY",
+      "sql": "SELECT time_bucket(\"k_timestamp\", '5m') AS \"time\",\n       \"current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\", \"current_val\"\nORDER BY \"time\", \"current_val\""
+    },
+    {
+      "id": "DS-07",
+      "feature": "downsampling/agg-none-alias",
+      "expect": "column AS alias + GROUP BY",
+      "sql": "SELECT time_bucket(\"k_timestamp\", '5m') AS \"time\",\n       \"current_val\" AS \"amps\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\", \"current_val\"\nORDER BY \"time\", \"current_val\""
+    },
+    {
+      "id": "DS-08",
+      "feature": "downsampling/qualified-table",
+      "expect": "\"factory\".\"equipment_telemetry\"",
+      "sql": "SELECT time_bucket(\"k_timestamp\", '5m') AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"factory\".\"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "DS-09",
+      "feature": "downsampling/nullable-column",
+      "expect": "temperature is NULL-able",
+      "sql": "SELECT time_bucket(\"k_timestamp\", '5m') AS \"time\",\n       avg(\"temperature\") AS \"avg_temperature\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "DS-10",
+      "feature": "downsampling/stddev",
+      "expect": "stddev aggregation",
+      "sql": "SELECT time_bucket(\"k_timestamp\", '5m') AS \"time\",\n       stddev(\"current_val\") AS \"stddev_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "GF-linear",
+      "feature": "gapfill/linear",
+      "expect": "interpolate(..., 'linear')",
+      "sql": "SELECT time_bucket_gapfill(\"k_timestamp\", '5m') AS \"time\",\n       interpolate(avg(\"current_val\"), 'linear') AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "GF-prev",
+      "feature": "gapfill/prev",
+      "expect": "interpolate(..., 'prev')",
+      "sql": "SELECT time_bucket_gapfill(\"k_timestamp\", '5m') AS \"time\",\n       interpolate(avg(\"current_val\"), 'prev') AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "GF-next",
+      "feature": "gapfill/next",
+      "expect": "interpolate(..., 'next')",
+      "sql": "SELECT time_bucket_gapfill(\"k_timestamp\", '5m') AS \"time\",\n       interpolate(avg(\"current_val\"), 'next') AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "GF-null",
+      "feature": "gapfill/null",
+      "expect": "interpolate(..., 'null')",
+      "sql": "SELECT time_bucket_gapfill(\"k_timestamp\", '5m') AS \"time\",\n       interpolate(avg(\"current_val\"), 'null') AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "GF-constant",
+      "feature": "gapfill/constant",
+      "expect": "interpolate(..., '0') quoted constant",
+      "sql": "SELECT time_bucket_gapfill(\"k_timestamp\", '5m') AS \"time\",\n       interpolate(avg(\"current_val\"), '0') AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "GF-constant-value",
+      "feature": "gapfill/constant-value",
+      "expect": "interpolate(..., '42')",
+      "sql": "SELECT time_bucket_gapfill(\"k_timestamp\", '5m') AS \"time\",\n       interpolate(avg(\"current_val\"), '42') AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "GF-constant-uppercase",
+      "feature": "gapfill/constant-uppercase",
+      "expect": "PREV normalised",
+      "sql": "SELECT time_bucket_gapfill(\"k_timestamp\", '5m') AS \"time\",\n       interpolate(avg(\"current_val\"), 'prev') AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "GF-unknown-mode",
+      "feature": "gapfill/unknown-mode",
+      "expect": "falls back to linear",
+      "sql": "SELECT time_bucket_gapfill(\"k_timestamp\", '5m') AS \"time\",\n       interpolate(avg(\"current_val\"), 'linear') AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\"\nORDER BY \"time\""
+    },
+    {
+      "id": "GF-tags",
+      "feature": "gapfill/tags",
+      "expect": "gapfill grouped by tag",
+      "sql": "SELECT time_bucket_gapfill(\"k_timestamp\", '5m') AS \"time\",\n       \"device_id\",\n       interpolate(avg(\"current_val\"), 'linear') AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\", \"device_id\"\nORDER BY \"time\", \"device_id\""
+    },
+    {
+      "id": "LT-last",
+      "feature": "latest/last",
+      "expect": "last(current_val) AS latest_current_val",
+      "sql": "SELECT last(\"current_val\") AS \"latest_current_val\",\n       last(\"k_timestamp\") AS \"time\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP"
+    },
+    {
+      "id": "LT-last_row",
+      "feature": "latest/last_row",
+      "expect": "last_row(current_val) AS latest_current_val",
+      "sql": "SELECT last_row(\"current_val\") AS \"latest_current_val\",\n       last(\"k_timestamp\") AS \"time\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP"
+    },
+    {
+      "id": "LT-first",
+      "feature": "latest/first",
+      "expect": "first(current_val) AS latest_current_val",
+      "sql": "SELECT first(\"current_val\") AS \"latest_current_val\",\n       first(\"k_timestamp\") AS \"time\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP"
+    },
+    {
+      "id": "LT-first_row",
+      "feature": "latest/first_row",
+      "expect": "first_row(current_val) AS latest_current_val",
+      "sql": "SELECT first_row(\"current_val\") AS \"latest_current_val\",\n       first(\"k_timestamp\") AS \"time\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP"
+    },
+    {
+      "id": "LT-tags",
+      "feature": "latest/tags",
+      "expect": "GROUP BY device_id",
+      "sql": "SELECT \"device_id\",\n       last(\"current_val\") AS \"latest_current_val\",\n       last(\"k_timestamp\") AS \"time\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"device_id\""
+    },
+    {
+      "id": "LT-alias",
+      "feature": "latest/alias",
+      "expect": "alias wins over latest_ prefix",
+      "sql": "SELECT last_row(\"current_val\") AS \"amps\",\n       last(\"k_timestamp\") AS \"time\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP"
+    },
+    {
+      "id": "LT-multi-metric",
+      "feature": "latest/multi-metric",
+      "expect": "two latest values",
+      "sql": "SELECT last(\"current_val\") AS \"latest_current_val\",\n       last(\"voltage\") AS \"latest_voltage\",\n       last(\"k_timestamp\") AS \"time\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP"
+    },
+    {
+      "id": "WN-time-window",
+      "feature": "window/TIME_WINDOW",
+      "expect": "TIME_WINDOW(ts, 1h)",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY TIME_WINDOW(\"k_timestamp\", '1h')\nORDER BY \"time\""
+    },
+    {
+      "id": "WN-time-window-slide",
+      "feature": "window/TIME_WINDOW+slide",
+      "expect": "TIME_WINDOW(ts, 1h, 10m)",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY TIME_WINDOW(\"k_timestamp\", '1h', '10m')\nORDER BY \"time\""
+    },
+    {
+      "id": "WN-time-window-default",
+      "feature": "window/TIME_WINDOW-default",
+      "expect": "interval defaults to 1h",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY TIME_WINDOW(\"k_timestamp\", '1h')\nORDER BY \"time\""
+    },
+    {
+      "id": "WN-session-window",
+      "feature": "window/SESSION_WINDOW",
+      "expect": "SESSION_WINDOW(ts, 5m)",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY SESSION_WINDOW(\"k_timestamp\", '5m')\nORDER BY \"time\""
+    },
+    {
+      "id": "WN-session-default",
+      "feature": "window/SESSION_WINDOW-default",
+      "expect": "interval defaults to 5m",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY SESSION_WINDOW(\"k_timestamp\", '5m')\nORDER BY \"time\""
+    },
+    {
+      "id": "WN-count-window",
+      "feature": "window/COUNT_WINDOW",
+      "expect": "COUNT_WINDOW(100) default limit",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY COUNT_WINDOW(100)\nORDER BY \"time\""
+    },
+    {
+      "id": "WN-count-window-slide",
+      "feature": "window/COUNT_WINDOW+slide",
+      "expect": "COUNT_WINDOW(100, 50)",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY COUNT_WINDOW(100, 50)\nORDER BY \"time\""
+    },
+    {
+      "id": "WN-event-window",
+      "feature": "window/EVENT_WINDOW",
+      "expect": "EVENT_WINDOW(start, end)",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY EVENT_WINDOW(current_val > 60, current_val < 20)\nORDER BY \"time\""
+    },
+    {
+      "id": "WN-mixed-metrics",
+      "feature": "window/mixed-metrics",
+      "expect": "aggregated + bare column together",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\",\n       \"voltage\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"voltage\", TIME_WINDOW(\"k_timestamp\", '1h')\nORDER BY \"time\""
+    },
+    {
+      "id": "WN-state-window",
+      "feature": "window/STATE_WINDOW",
+      "expect": "STATE_WINDOW(expr)",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY STATE_WINDOW(case when status_code = 1 then 1 else 0 end)\nORDER BY \"time\""
+    },
+    {
+      "id": "WN-window-agg-none",
+      "feature": "window/agg-none",
+      "expect": "metric column before window in GROUP BY",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       \"current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"current_val\", TIME_WINDOW(\"k_timestamp\", '1h')\nORDER BY \"time\""
+    },
+    {
+      "id": "WN-gapfill-agg-none",
+      "feature": "gapfill/agg-none",
+      "expect": "KWDB: 'the first parameter of interpolate must be agg func'",
+      "sql": "SELECT time_bucket_gapfill(\"k_timestamp\", '5m') AS \"time\",\n       interpolate(\"current_val\", 'linear')\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"time\", \"current_val\"\nORDER BY \"time\", \"current_val\"",
+      "expectFail": true
+    },
+    {
+      "id": "WN-event-window-reachable",
+      "feature": "window/EVENT_WINDOW-reachable",
+      "expect": "reachable end condition yields rows",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY EVENT_WINDOW(current_val > 60, current_val < 20)\nORDER BY \"time\""
+    },
+    {
+      "id": "WN-event-window-tags",
+      "feature": "window/EVENT_WINDOW+tags",
+      "expect": "GROUP BY tag, window",
+      "sql": "SELECT first(\"k_timestamp\") AS \"time\",\n       \"device_id\",\n       avg(\"current_val\") AS \"avg_current_val\"\nFROM \"equipment_telemetry\"\nWHERE \"k_timestamp\" >= '2026-10-27 00:00:00'::TIMESTAMP AND \"k_timestamp\" <= '2026-10-27 06:00:00'::TIMESTAMP\nGROUP BY \"device_id\", EVENT_WINDOW(current_val > 20, current_val < 5)\nORDER BY \"time\", \"device_id\""
+    },
+    {
+      "id": "WN-unsafe-semicolon",
+      "feature": "window/unsafe-semicolon",
+      "expect": "returns empty SQL",
+      "sql": ""
+    },
+    {
+      "id": "WN-unsafe-comment",
+      "feature": "window/unsafe-comment",
+      "expect": "returns empty SQL",
+      "sql": ""
+    },
+    {
+      "id": "WN-count-nonnumeric",
+      "feature": "window/COUNT_WINDOW-nonnumeric",
+      "expect": "returns empty SQL",
+      "sql": ""
+    },
+    {
+      "id": "WN-count-slide-nonnumeric",
+      "feature": "window/COUNT_WINDOW-slide-nonnumeric",
+      "expect": "returns empty SQL",
+      "sql": ""
+    },
+    {
+      "id": "RAW-01",
+      "feature": "raw/plain-select",
+      "expect": "executes",
+      "sql": "SELECT 1"
+    },
+    {
+      "id": "RAW-02",
+      "feature": "raw/table-scan",
+      "expect": "executes",
+      "sql": "SELECT k_timestamp, device_id, current_val FROM equipment_telemetry ORDER BY k_timestamp LIMIT 50"
+    },
+    {
+      "id": "RAW-03",
+      "feature": "raw/aggregate",
+      "expect": "executes",
+      "sql": "SELECT count(*), avg(current_val) FROM equipment_telemetry"
+    },
+    {
+      "id": "RAW-04",
+      "feature": "raw/show-tables",
+      "expect": "executes",
+      "sql": "SHOW TABLES FROM factory"
+    },
+    {
+      "id": "RAW-05",
+      "feature": "raw/show-create",
+      "expect": "executes",
+      "sql": "SHOW CREATE TABLE factory.equipment_telemetry"
+    },
+    {
+      "id": "RAW-06",
+      "feature": "raw/with-cte",
+      "expect": "executes",
+      "sql": "WITH x AS (SELECT device_id, count(*) AS n FROM equipment_telemetry GROUP BY device_id) SELECT * FROM x ORDER BY device_id"
+    },
+    {
+      "id": "RAW-07",
+      "feature": "raw/explain",
+      "expect": "executes",
+      "sql": "EXPLAIN SELECT 1"
+    },
+    {
+      "id": "RAW-08",
+      "feature": "raw/timeFromTo",
+      "expect": "executes",
+      "sql": "SELECT count(*) FROM equipment_telemetry WHERE k_timestamp >= '2026-10-27 00:00:00'::TIMESTAMP AND k_timestamp <= '2026-10-27 06:00:00'::TIMESTAMP"
+    }
+  ],
+  "varResults": [
+    {
+      "id": "VQ-01",
+      "raw": "tables()",
+      "parsed": {
+        "queryType": "tables"
+      },
+      "rendered": "tables()",
+      "roundTrip": {
+        "queryType": "tables"
+      }
+    },
+    {
+      "id": "VQ-02",
+      "raw": "tables() ;",
+      "parsed": {
+        "queryType": "tables"
+      },
+      "rendered": "tables()",
+      "roundTrip": {
+        "queryType": "tables"
+      }
+    },
+    {
+      "id": "VQ-03",
+      "raw": "columns(equipment_telemetry)",
+      "parsed": {
+        "queryType": "columns",
+        "table": "equipment_telemetry"
+      },
+      "rendered": "columns(equipment_telemetry)",
+      "roundTrip": {
+        "queryType": "columns",
+        "table": "equipment_telemetry"
+      }
+    },
+    {
+      "id": "VQ-04",
+      "raw": "columns(\"equipment_telemetry\")",
+      "parsed": {
+        "queryType": "columns",
+        "table": "equipment_telemetry"
+      },
+      "rendered": "columns(equipment_telemetry)",
+      "roundTrip": {
+        "queryType": "columns",
+        "table": "equipment_telemetry"
+      }
+    },
+    {
+      "id": "VQ-05",
+      "raw": "tag_values(equipment_telemetry, device_id)",
+      "parsed": {
+        "queryType": "tagValues",
+        "table": "equipment_telemetry",
+        "column": "device_id"
+      },
+      "rendered": "tag_values(equipment_telemetry, device_id)",
+      "roundTrip": {
+        "queryType": "tagValues",
+        "table": "equipment_telemetry",
+        "column": "device_id"
+      }
+    },
+    {
+      "id": "VQ-06",
+      "raw": "tag_values('equipment_telemetry', 'device_id')",
+      "parsed": {
+        "queryType": "tagValues",
+        "table": "equipment_telemetry",
+        "column": "device_id"
+      },
+      "rendered": "tag_values(equipment_telemetry, device_id)",
+      "roundTrip": {
+        "queryType": "tagValues",
+        "table": "equipment_telemetry",
+        "column": "device_id"
+      }
+    },
+    {
+      "id": "VQ-07",
+      "raw": "TABLES()",
+      "parsed": {
+        "queryType": "tables"
+      },
+      "rendered": "tables()",
+      "roundTrip": {
+        "queryType": "tables"
+      }
+    },
+    {
+      "id": "VQ-08",
+      "raw": "  tag_values( equipment_telemetry , device_id )  ",
+      "parsed": {
+        "queryType": "tagValues",
+        "table": "equipment_telemetry",
+        "column": "device_id"
+      },
+      "rendered": "tag_values(equipment_telemetry, device_id)",
+      "roundTrip": {
+        "queryType": "tagValues",
+        "table": "equipment_telemetry",
+        "column": "device_id"
+      }
+    }
+  ],
+  "varRejectResults": [
+    {
+      "raw": "tag_values(equipment_telemetry)",
+      "rejected": true,
+      "error": "Error: Variable query tag_values(table, column) requires exactly two arguments"
+    },
+    {
+      "raw": "columns()",
+      "rejected": true,
+      "error": "Error: Variable query columns(table) requires exactly one table argument"
+    },
+    {
+      "raw": "columns(a, b)",
+      "rejected": true,
+      "error": "Error: Variable query columns(table) requires exactly one table argument"
+    },
+    {
+      "raw": "tables(x)",
+      "rejected": true,
+      "error": "Error: Variable query tables() takes no arguments"
+    },
+    {
+      "raw": "select 1",
+      "rejected": true,
+      "error": "Error: Unsupported variable query. Use tag_values(table, column), tables() or columns(table)."
+    },
+    {
+      "raw": "tag_values(equipment_telemetry, device_id, extra)",
+      "rejected": true,
+      "error": "Error: Variable query tag_values(table, column) requires exactly two arguments"
+    }
+  ],
+  "varSql": [
+    {
+      "id": "VQ-tables",
+      "sql": "SHOW TABLES FROM \"factory\""
+    },
+    {
+      "id": "VQ-columns",
+      "sql": "SHOW CREATE TABLE \"factory\".\"equipment_telemetry\""
+    },
+    {
+      "id": "VQ-tag-values",
+      "sql": "SELECT DISTINCT \"device_id\" FROM \"factory\".\"equipment_telemetry\" ORDER BY \"device_id\" LIMIT 10000"
+    },
+    {
+      "id": "VQ-tag-values-multi",
+      "sql": "SELECT DISTINCT \"workshop_id\" FROM \"factory\".\"equipment_telemetry\" ORDER BY \"workshop_id\" LIMIT 10000"
+    }
+  ]
+}

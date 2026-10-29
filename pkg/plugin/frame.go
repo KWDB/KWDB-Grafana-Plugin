@@ -149,9 +149,11 @@ func scanPlans(rows pgx.Rows, maxRows int) ([]columnPlan, bool, error) {
 
 // timeSeriesFrame converts buffered plans into a wide time-series frame.
 func timeSeriesFrame(plans []columnPlan, timeColumn string, tags []string) (*data.Frame, error) {
-	if err := prepareTimeSeries(plans, timeColumn, tags); err != nil {
+	timeIdx, err := prepareTimeSeries(plans, timeColumn, tags)
+	if err != nil {
 		return nil, err
 	}
+	plans = moveTimeFirst(plans, timeIdx)
 
 	frame := newFrameFromPlans(plans)
 	rowLen, err := frame.RowLen()
@@ -467,13 +469,16 @@ func convertValue(kind columnKind, v any) (any, error) {
 	return nil, fmt.Errorf("unsupported column kind %d", kind)
 }
 
-func prepareTimeSeries(plans []columnPlan, timeColumn string, tags []string) error {
+// prepareTimeSeries normalises the plans for a time-series frame: it resolves
+// the time column, rejects NULL times, sorts the rows by time and renames the
+// column to "time". It returns the index of the time column.
+func prepareTimeSeries(plans []columnPlan, timeColumn string, tags []string) (int, error) {
 	timeIdx, err := findTimeColumn(plans, timeColumn)
 	if err != nil {
-		return err
+		return -1, err
 	}
 	if err := ensureNoNullTimes(plans[timeIdx]); err != nil {
-		return err
+		return -1, err
 	}
 	sortPlansByTime(plans, timeIdx)
 	plans[timeIdx].name = "time"
@@ -485,7 +490,30 @@ func prepareTimeSeries(plans []columnPlan, timeColumn string, tags []string) err
 			}
 		}
 	}
-	return nil
+	return timeIdx, nil
+}
+
+// moveTimeFirst puts the time column at the head of the frame.
+//
+// A Grafana time series frame must lead with its time field. Statements do not
+// have to list the time column first - the latest-values builder deliberately
+// selects the metrics before it - and while data.LongToWide hoists the time
+// field for long frames, a frame without string/bool columns is already "wide"
+// and is returned untouched, which would leave the time field last and make
+// Grafana treat the result as a table.
+func moveTimeFirst(plans []columnPlan, timeIdx int) []columnPlan {
+	if timeIdx <= 0 {
+		return plans
+	}
+	reordered := make([]columnPlan, 0, len(plans))
+	reordered = append(reordered, plans[timeIdx])
+	for i, plan := range plans {
+		if i == timeIdx {
+			continue
+		}
+		reordered = append(reordered, plan)
+	}
+	return reordered
 }
 
 func findTimeColumn(plans []columnPlan, timeColumn string) (int, error) {

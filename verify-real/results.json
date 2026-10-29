@@ -1,0 +1,507 @@
+[
+  {
+    "id": "DS-01",
+    "feature": "downsampling/basic",
+    "expect": "rows>0, cols: time, avg_current_val",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|16.356183533447684",
+    "elapsedMs": 135
+  },
+  {
+    "id": "DS-02",
+    "feature": "downsampling/tags",
+    "expect": "rows = time buckets x 4 devices",
+    "status": "OK",
+    "rows": 288,
+    "first": "2026-10-27 00:00:00+00:00|CNC-001|14.944523809523812",
+    "elapsedMs": 118
+  },
+  {
+    "id": "DS-03",
+    "feature": "downsampling/multi-metric",
+    "expect": "avg+max+count in one SELECT",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|16.356183533447684|223.47999999999999|1166",
+    "elapsedMs": 103
+  },
+  {
+    "id": "DS-04",
+    "feature": "downsampling/blank-interval",
+    "expect": "interval falls back to 5m",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|16.356183533447684",
+    "elapsedMs": 102
+  },
+  {
+    "id": "DS-05",
+    "feature": "downsampling/interval-trimmed",
+    "expect": "interval trimmed",
+    "status": "OK",
+    "rows": 6,
+    "first": "2026-10-27 00:00:00+00:00|16.348348268693094",
+    "elapsedMs": 99
+  },
+  {
+    "id": "DS-06",
+    "feature": "downsampling/agg-none-no-alias",
+    "expect": "bare column added to GROUP BY",
+    "status": "OK",
+    "rows": 32136,
+    "first": "2026-10-27 00:00:00+00:00|12.720000000000001",
+    "elapsedMs": 1549
+  },
+  {
+    "id": "DS-07",
+    "feature": "downsampling/agg-none-alias",
+    "expect": "column AS alias + GROUP BY",
+    "status": "OK",
+    "rows": 32136,
+    "first": "2026-10-27 00:00:00+00:00|12.720000000000001",
+    "elapsedMs": 1410
+  },
+  {
+    "id": "DS-08",
+    "feature": "downsampling/qualified-table",
+    "expect": "\"factory\".\"equipment_telemetry\"",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|16.356183533447684",
+    "elapsedMs": 122
+  },
+  {
+    "id": "DS-09",
+    "feature": "downsampling/nullable-column",
+    "expect": "temperature is NULL-able",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|47.286612349914222",
+    "elapsedMs": 101
+  },
+  {
+    "id": "DS-10",
+    "feature": "downsampling/stddev",
+    "expect": "stddev aggregation",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|7.71808229181849",
+    "elapsedMs": 164
+  },
+  {
+    "id": "GF-linear",
+    "feature": "gapfill/linear",
+    "expect": "interpolate(..., 'linear')",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|16.3561835334477",
+    "elapsedMs": 684
+  },
+  {
+    "id": "GF-prev",
+    "feature": "gapfill/prev",
+    "expect": "interpolate(..., 'prev')",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|16.3561835334477",
+    "elapsedMs": 681
+  },
+  {
+    "id": "GF-next",
+    "feature": "gapfill/next",
+    "expect": "interpolate(..., 'next')",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|16.3561835334477",
+    "elapsedMs": 708
+  },
+  {
+    "id": "GF-null",
+    "feature": "gapfill/null",
+    "expect": "interpolate(..., 'null')",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|16.3561835334477",
+    "elapsedMs": 716
+  },
+  {
+    "id": "GF-constant",
+    "feature": "gapfill/constant",
+    "expect": "interpolate(..., '0') quoted constant",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|16.3561835334477",
+    "elapsedMs": 677
+  },
+  {
+    "id": "GF-constant-value",
+    "feature": "gapfill/constant-value",
+    "expect": "interpolate(..., '42')",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|16.3561835334477",
+    "elapsedMs": 669
+  },
+  {
+    "id": "GF-constant-uppercase",
+    "feature": "gapfill/constant-uppercase",
+    "expect": "PREV normalised",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|16.3561835334477",
+    "elapsedMs": 701
+  },
+  {
+    "id": "GF-unknown-mode",
+    "feature": "gapfill/unknown-mode",
+    "expect": "falls back to linear",
+    "status": "OK",
+    "rows": 72,
+    "first": "2026-10-27 00:00:00+00:00|16.3561835334477",
+    "elapsedMs": 680
+  },
+  {
+    "id": "GF-tags",
+    "feature": "gapfill/tags",
+    "expect": "gapfill grouped by tag",
+    "status": "OK",
+    "rows": 288,
+    "first": "2026-10-27 00:00:00+00:00|CNC-001|14.9445238095238",
+    "elapsedMs": 743
+  },
+  {
+    "id": "LT-last",
+    "feature": "latest/last",
+    "expect": "last(current_val) AS latest_current_val",
+    "status": "OK",
+    "rows": 1,
+    "first": "15.66|2026-10-27 05:59:59.273+00:00",
+    "elapsedMs": 124
+  },
+  {
+    "id": "LT-last_row",
+    "feature": "latest/last_row",
+    "expect": "last_row(current_val) AS latest_current_val",
+    "status": "OK",
+    "rows": 1,
+    "first": "15.66|2026-10-27 05:59:59.273+00:00",
+    "elapsedMs": 107
+  },
+  {
+    "id": "LT-first",
+    "feature": "latest/first",
+    "expect": "first(current_val) AS latest_current_val",
+    "status": "OK",
+    "rows": 1,
+    "first": "16.399999999999999|2026-10-27 00:00:00.226+00:00",
+    "elapsedMs": 111
+  },
+  {
+    "id": "LT-first_row",
+    "feature": "latest/first_row",
+    "expect": "first_row(current_val) AS latest_current_val",
+    "status": "OK",
+    "rows": 1,
+    "first": "16.399999999999999|2026-10-27 00:00:00.226+00:00",
+    "elapsedMs": 111
+  },
+  {
+    "id": "LT-tags",
+    "feature": "latest/tags",
+    "expect": "GROUP BY device_id",
+    "status": "OK",
+    "rows": 4,
+    "first": "INJ-001|15.66|2026-10-27 05:59:59.273+00:00",
+    "elapsedMs": 115
+  },
+  {
+    "id": "LT-alias",
+    "feature": "latest/alias",
+    "expect": "alias wins over latest_ prefix",
+    "status": "OK",
+    "rows": 1,
+    "first": "15.66|2026-10-27 05:59:59.273+00:00",
+    "elapsedMs": 102
+  },
+  {
+    "id": "LT-multi-metric",
+    "feature": "latest/multi-metric",
+    "expect": "two latest values",
+    "status": "OK",
+    "rows": 1,
+    "first": "15.66|222.08000000000001|2026-10-27 05:59:59.273+00:00",
+    "elapsedMs": 116
+  },
+  {
+    "id": "WN-time-window",
+    "feature": "window/TIME_WINDOW",
+    "expect": "TIME_WINDOW(ts, 1h)",
+    "status": "OK",
+    "rows": 6,
+    "first": "2026-10-27 00:00:00+00:00|16.3483482686931",
+    "elapsedMs": 740
+  },
+  {
+    "id": "WN-time-window-slide",
+    "feature": "window/TIME_WINDOW+slide",
+    "expect": "TIME_WINDOW(ts, 1h, 10m)",
+    "status": "OK",
+    "rows": 41,
+    "first": "2026-10-26 23:10:00+00:00|16.347807394669",
+    "elapsedMs": 2167
+  },
+  {
+    "id": "WN-time-window-default",
+    "feature": "window/TIME_WINDOW-default",
+    "expect": "interval defaults to 1h",
+    "status": "OK",
+    "rows": 6,
+    "first": "2026-10-27 00:00:00+00:00|16.3483482686931",
+    "elapsedMs": 737
+  },
+  {
+    "id": "WN-session-window",
+    "feature": "window/SESSION_WINDOW",
+    "expect": "SESSION_WINDOW(ts, 5m)",
+    "status": "OK",
+    "rows": 1,
+    "first": "2026-10-27 00:00:00.226+00:00|16.3477914227691",
+    "elapsedMs": 388
+  },
+  {
+    "id": "WN-session-default",
+    "feature": "window/SESSION_WINDOW-default",
+    "expect": "interval defaults to 5m",
+    "status": "OK",
+    "rows": 1,
+    "first": "2026-10-27 00:00:00.226+00:00|16.3477914227691",
+    "elapsedMs": 396
+  },
+  {
+    "id": "WN-count-window",
+    "feature": "window/COUNT_WINDOW",
+    "expect": "COUNT_WINDOW(100) default limit",
+    "status": "OK",
+    "rows": 838,
+    "first": "2026-10-27 00:00:00.226+00:00|20.5869",
+    "elapsedMs": 324
+  },
+  {
+    "id": "WN-count-window-slide",
+    "feature": "window/COUNT_WINDOW+slide",
+    "expect": "COUNT_WINDOW(100, 50)",
+    "status": "OK",
+    "rows": 1675,
+    "first": "2026-10-27 00:00:00.226+00:00|20.5869",
+    "elapsedMs": 444
+  },
+  {
+    "id": "WN-event-window",
+    "feature": "window/EVENT_WINDOW",
+    "expect": "EVENT_WINDOW(start, end)",
+    "status": "OK",
+    "rows": 874,
+    "first": "2026-10-27 00:00:11.246+00:00|37.415",
+    "elapsedMs": 343
+  },
+  {
+    "id": "WN-mixed-metrics",
+    "feature": "window/mixed-metrics",
+    "expect": "aggregated + bare column together",
+    "status": "OK",
+    "rows": 5759,
+    "first": "2026-10-27 00:00:00+00:00|16.6521428571429|220.9",
+    "elapsedMs": 979
+  },
+  {
+    "id": "WN-state-window",
+    "feature": "window/STATE_WINDOW",
+    "expect": "STATE_WINDOW(expr)",
+    "status": "OK",
+    "rows": 3149,
+    "first": "2026-10-27 00:00:00.226+00:00|20.4421052631579",
+    "elapsedMs": 426
+  },
+  {
+    "id": "WN-window-agg-none",
+    "feature": "window/agg-none",
+    "expect": "metric column before window in GROUP BY",
+    "status": "OK",
+    "rows": 5082,
+    "first": "2026-10-27 00:00:00+00:00|51.95",
+    "elapsedMs": 919
+  },
+  {
+    "id": "WN-gapfill-agg-none",
+    "feature": "gapfill/agg-none",
+    "expect": "KWDB: 'the first parameter of interpolate must be agg func'",
+    "status": "XFAIL",
+    "rows": 0,
+    "first": "",
+    "error": "ERROR:  the first parameter of interpolate must be agg func",
+    "elapsedMs": 127
+  },
+  {
+    "id": "WN-event-window-reachable",
+    "feature": "window/EVENT_WINDOW-reachable",
+    "expect": "reachable end condition yields rows",
+    "status": "OK",
+    "rows": 874,
+    "first": "2026-10-27 00:00:11.246+00:00|37.415",
+    "elapsedMs": 311
+  },
+  {
+    "id": "WN-event-window-tags",
+    "feature": "window/EVENT_WINDOW+tags",
+    "expect": "GROUP BY tag, window",
+    "status": "OK",
+    "rows": 0,
+    "first": "",
+    "elapsedMs": 129
+  },
+  {
+    "id": "WN-unsafe-semicolon",
+    "feature": "window/unsafe-semicolon",
+    "expect": "returns empty SQL",
+    "status": "EMPTY",
+    "rows": 0,
+    "first": "",
+    "elapsedMs": 0
+  },
+  {
+    "id": "WN-unsafe-comment",
+    "feature": "window/unsafe-comment",
+    "expect": "returns empty SQL",
+    "status": "EMPTY",
+    "rows": 0,
+    "first": "",
+    "elapsedMs": 0
+  },
+  {
+    "id": "WN-count-nonnumeric",
+    "feature": "window/COUNT_WINDOW-nonnumeric",
+    "expect": "returns empty SQL",
+    "status": "EMPTY",
+    "rows": 0,
+    "first": "",
+    "elapsedMs": 0
+  },
+  {
+    "id": "WN-count-slide-nonnumeric",
+    "feature": "window/COUNT_WINDOW-slide-nonnumeric",
+    "expect": "returns empty SQL",
+    "status": "EMPTY",
+    "rows": 0,
+    "first": "",
+    "elapsedMs": 0
+  },
+  {
+    "id": "RAW-01",
+    "feature": "raw/plain-select",
+    "expect": "executes",
+    "status": "OK",
+    "rows": 1,
+    "first": "1",
+    "elapsedMs": 111
+  },
+  {
+    "id": "RAW-02",
+    "feature": "raw/table-scan",
+    "expect": "executes",
+    "status": "OK",
+    "rows": 50,
+    "first": "2026-10-26 01:06:36.477+00:00|INJ-001|17.23",
+    "elapsedMs": 114
+  },
+  {
+    "id": "RAW-03",
+    "feature": "raw/aggregate",
+    "expect": "executes",
+    "status": "OK",
+    "rows": 1,
+    "first": "1007399|16.345890416806053",
+    "elapsedMs": 117
+  },
+  {
+    "id": "RAW-04",
+    "feature": "raw/show-tables",
+    "expect": "executes",
+    "status": "OK",
+    "rows": 4,
+    "first": "equipment_telemetry|TIME SERIES TABLE",
+    "elapsedMs": 119
+  },
+  {
+    "id": "RAW-05",
+    "feature": "raw/show-create",
+    "expect": "executes",
+    "status": "OK",
+    "rows": 13,
+    "first": "factory.public.equipment_telemetry|CREATE TABLE equipment_telemetry (",
+    "elapsedMs": 250
+  },
+  {
+    "id": "RAW-06",
+    "feature": "raw/with-cte",
+    "expect": "executes",
+    "status": "OK",
+    "rows": 4,
+    "first": "CNC-001|251857",
+    "elapsedMs": 129
+  },
+  {
+    "id": "RAW-07",
+    "feature": "raw/explain",
+    "expect": "executes",
+    "status": "OK",
+    "rows": 4,
+    "first": "|distributed|false",
+    "elapsedMs": 122
+  },
+  {
+    "id": "RAW-08",
+    "feature": "raw/timeFromTo",
+    "expect": "executes",
+    "status": "OK",
+    "rows": 1,
+    "first": "83710",
+    "elapsedMs": 110
+  },
+  {
+    "id": "VQ-tables",
+    "feature": "variable-query-sql",
+    "expect": "executes",
+    "status": "OK",
+    "rows": 4,
+    "first": "equipment_telemetry|TIME SERIES TABLE",
+    "elapsedMs": 110
+  },
+  {
+    "id": "VQ-columns",
+    "feature": "variable-query-sql",
+    "expect": "executes",
+    "status": "OK",
+    "rows": 13,
+    "first": "factory.public.equipment_telemetry|CREATE TABLE equipment_telemetry (",
+    "elapsedMs": 277
+  },
+  {
+    "id": "VQ-tag-values",
+    "feature": "variable-query-sql",
+    "expect": "executes",
+    "status": "OK",
+    "rows": 4,
+    "first": "CNC-001",
+    "elapsedMs": 133
+  },
+  {
+    "id": "VQ-tag-values-multi",
+    "feature": "variable-query-sql",
+    "expect": "executes",
+    "status": "OK",
+    "rows": 2,
+    "first": "WS-01",
+    "elapsedMs": 119
+  }
+]

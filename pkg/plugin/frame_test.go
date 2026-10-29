@@ -189,6 +189,69 @@ func TestRowsToFrameTimeSeriesLongToWide(t *testing.T) {
 	}
 }
 
+// The latest-values builder selects the metrics before the time column, so the
+// time field is not first in the result. A frame without string/bool columns is
+// already "wide" and data.LongToWide is not called, which would leave the time
+// field last and make Grafana treat the frame as a table.
+func TestRowsToFrameTimeSeriesTimeFieldLeads(t *testing.T) {
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC)
+	rows := &mockRows{
+		fields: []pgconn.FieldDescription{
+			{Name: "latest_current_val", DataTypeOID: 701},
+			{Name: "k_timestamp", DataTypeOID: 1184},
+		},
+		rows: [][]any{
+			{10.0, t2},
+			{5.0, t1},
+		},
+	}
+
+	frame, err := RowsToFrame(rows, "time_series", "k_timestamp", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frame.Fields) != 2 {
+		t.Fatalf("field count = %d, want 2", len(frame.Fields))
+	}
+	if got := frame.Fields[0].Name; got != "time" {
+		t.Errorf("first field name = %q, want time (time field must lead)", got)
+	}
+	if got := frame.Fields[1].Name; got != "latest_current_val" {
+		t.Errorf("second field name = %q, want latest_current_val", got)
+	}
+	if got := frame.Fields[0].At(0).(time.Time); !got.Equal(t1) {
+		t.Errorf("first time = %v, want %v (rows must be sorted by time)", got, t1)
+	}
+	if frame.TimeSeriesSchema().Type != data.TimeSeriesTypeWide {
+		t.Errorf("schema type = %v, want wide", frame.TimeSeriesSchema().Type)
+	}
+}
+
+// The same statement with a tag column goes through the long-to-wide path,
+// which hoists the time field itself; both paths must agree on the order.
+func TestRowsToFrameTimeSeriesTimeFieldLeadsWithTag(t *testing.T) {
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	rows := &mockRows{
+		fields: []pgconn.FieldDescription{
+			{Name: "device_id", DataTypeOID: 25},
+			{Name: "latest_current_val", DataTypeOID: 701},
+			{Name: "k_timestamp", DataTypeOID: 1184},
+		},
+		rows: [][]any{
+			{"A", 10.0, t1},
+		},
+	}
+
+	frame, err := RowsToFrame(rows, "time_series", "k_timestamp", []string{"device_id"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := frame.Fields[0].Name; got != "time" {
+		t.Errorf("first field name = %q, want time", got)
+	}
+}
+
 func TestRowsToFrameTimeSeriesNumericTagBecomesLabel(t *testing.T) {
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	t2 := time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC)

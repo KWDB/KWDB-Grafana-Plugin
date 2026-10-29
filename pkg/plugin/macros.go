@@ -15,61 +15,129 @@ const macroTimeFormat = "2006-01-02 15:04:05.999999999"
 // $__timeFilter(CAST(ts AS TIMESTAMP)) or $__timeFilter(time_bucket(ts, '5m'))
 // expand correctly. Every expansion is wrapped in parentheses so surrounding
 // boolean operators keep their meaning.
+//
+// Expansion only happens in executable SQL: a macro that appears inside a
+// string literal, a quoted identifier or a comment is left untouched, because
+// rewriting it would corrupt that literal. A macro call is consumed as a whole,
+// including any literals inside its argument list, so the scanner never splits
+// $__timeGroup(ts, '5m') at the '5m'.
 func ExpandMacros(rawSql string, timeRange backend.TimeRange) string {
 	from := fmt.Sprintf("'%s'::TIMESTAMP", timeRange.From.UTC().Format(macroTimeFormat))
 	to := fmt.Sprintf("'%s'::TIMESTAMP", timeRange.To.UTC().Format(macroTimeFormat))
 
-	sql := expandMacroCalls(rawSql, "$__timeFilter", func(arg string) string {
-		return fmt.Sprintf("(%s >= %s AND %s <= %s)", arg, from, arg, to)
-	})
-	sql = expandMacroCalls(sql, "$__timeGroup", func(arg string) string {
-		args := splitTopLevelArgs(arg)
-		if len(args) != 2 {
-			// Leave the macro untouched so the database reports a syntax error
-			// instead of silently running an unexpected query.
-			return "$__timeGroup(" + arg + ")"
+	if !strings.Contains(rawSql, "$__") {
+		return rawSql
+	}
+
+	var b strings.Builder
+	b.Grow(len(rawSql))
+	// codeStart marks the beginning of the current run of executable SQL; only
+	// those bytes reach the scalar replacement below.
+	codeStart := 0
+	// Each run of executable SQL is written out with the scalar macros
+	// substituted, so a macro inside a literal is never touched.
+	writeRun := func(end int) {
+		if end <= codeStart {
+			return
 		}
-		return fmt.Sprintf("time_bucket(%s, %s)", args[0], args[1])
-	})
-	sql = strings.ReplaceAll(sql, "$__timeFrom", from)
-	sql = strings.ReplaceAll(sql, "$__timeTo", to)
-	return sql
+		code := rawSql[codeStart:end]
+		code = strings.ReplaceAll(code, "$__timeFrom", from)
+		code = strings.ReplaceAll(code, "$__timeTo", to)
+		b.WriteString(code)
+	}
+	copyVerbatim := func(next int) {
+		b.WriteString(rawSql[codeStart:next])
+		codeStart = next
+	}
+	for i := 0; i < len(rawSql); {
+		if replacement, next, ok := expandMacroAt(rawSql, i, from, to); ok {
+			writeRun(i)
+			b.WriteString(replacement)
+			i = next
+			codeStart = next
+			continue
+		}
+		switch c := rawSql[i]; {
+		case c == '\'':
+			next := skipSingleQuoted(rawSql, i, isEscapePrefixed(rawSql, i))
+			copyVerbatim(next)
+			i = next
+		case c == '"':
+			next := skipDoubleQuoted(rawSql, i)
+			copyVerbatim(next)
+			i = next
+		case c == '$':
+			if next, ok := skipDollarQuoted(rawSql, i); ok {
+				copyVerbatim(next)
+				i = next
+				continue
+			}
+			i++
+		case c == '-' && i+1 < len(rawSql) && rawSql[i+1] == '-':
+			next := skipLineComment(rawSql, i)
+			copyVerbatim(next)
+			i = next
+		case c == '/' && i+1 < len(rawSql) && rawSql[i+1] == '*':
+			next := skipBlockComment(rawSql, i)
+			copyVerbatim(next)
+			i = next
+		default:
+			i++
+		}
+	}
+	writeRun(len(rawSql))
+	return b.String()
 }
 
-// expandMacroCalls replaces name(arg) occurrences using expand for the
-// argument text. Nested parentheses, single-quoted strings, double-quoted
-// identifiers and comments inside the argument are handled.
-func expandMacroCalls(sql, name string, expand func(arg string) string) string {
-	if !strings.Contains(sql, name) {
-		return sql
-	}
-	var b strings.Builder
-	b.Grow(len(sql))
-	for i := 0; i < len(sql); {
+// timeMacros lists the supported macros. The function forms are checked before
+// the scalar ones so that "$__timeFrom" never shadows a longer name.
+var timeMacros = []string{"$__timeFilter", "$__timeGroup", "$__timeFrom", "$__timeTo"}
+
+// expandMacroAt expands the macro that starts at position i. It reports ok =
+// false when no macro starts there, or when a macro is present but cannot be
+// expanded (a malformed $__timeGroup); the caller then copies the bytes
+// unchanged so the database reports the problem instead of the plugin silently
+// running a different statement.
+func expandMacroAt(sql string, i int, from, to string) (string, int, bool) {
+	for _, name := range timeMacros {
 		if !strings.HasPrefix(sql[i:], name) {
-			b.WriteByte(sql[i])
-			i++
 			continue
 		}
 		open := i + len(name)
-		for open < len(sql) && (sql[open] == ' ' || sql[open] == '\t' || sql[open] == '\n' || sql[open] == '\r') {
+		for open < len(sql) && isSpaceByte(sql[open]) {
 			open++
 		}
-		if open >= len(sql) || sql[open] != '(' {
-			b.WriteString(name)
-			i += len(name)
-			continue
+		if open < len(sql) && sql[open] == '(' {
+			closeIdx := matchingParen(sql, open)
+			if closeIdx < 0 {
+				return "", 0, false
+			}
+			arg := strings.TrimSpace(sql[open+1 : closeIdx])
+			switch name {
+			case "$__timeFilter":
+				return fmt.Sprintf("(%s >= %s AND %s <= %s)", arg, from, arg, to), closeIdx + 1, true
+			case "$__timeGroup":
+				args := splitTopLevelArgs(arg)
+				if len(args) != 2 {
+					return "", 0, false
+				}
+				return fmt.Sprintf("time_bucket(%s, %s)", args[0], args[1]), closeIdx + 1, true
+			}
+			return "", 0, false
 		}
-		close := matchingParen(sql, open)
-		if close < 0 {
-			b.WriteString(sql[i:])
-			break
+		switch name {
+		case "$__timeFrom":
+			return from, i + len(name), true
+		case "$__timeTo":
+			return to, i + len(name), true
 		}
-		arg := strings.TrimSpace(sql[open+1 : close])
-		b.WriteString(expand(arg))
-		i = close + 1
+		return "", 0, false
 	}
-	return b.String()
+	return "", 0, false
+}
+
+func isSpaceByte(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
 // matchingParen returns the index of the closing parenthesis that matches the

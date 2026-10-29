@@ -63,7 +63,11 @@ function normalizeInterpolateConstant(value?: number): number {
 function interpolateModeLiteral(query: KwdbQuery): string {
   const mode = normalizeInterpolateMode(query.interpolateMode);
   if (mode === 'constant') {
-    return String(normalizeInterpolateConstant(query.interpolateConstant));
+    // KWDB's interpolate() takes a constant value, not a 'constant' keyword:
+    // interpolate(expr, 'constant') fails with "Interpolate/imputation method
+    // not supported". The value is emitted as a quoted numeric string, matching
+    // the form in the KWDB documentation (interpolate(avg(temperature), '25')).
+    return quoteString(String(normalizeInterpolateConstant(query.interpolateConstant)));
   }
   return quoteString(mode);
 }
@@ -129,16 +133,39 @@ function selectLines(items: string[]): string[] {
   });
 }
 
-function groupAndOrderBy(tags: string[]): { groupBy: string[]; orderBy: string[] } {
+function groupAndOrderBy(tags: string[], rawColumns: string[] = []): { groupBy: string[]; orderBy: string[] } {
   const quotedTags = tags.map(quoteIdent);
   return {
-    groupBy: ['"time"', ...quotedTags],
-    orderBy: ['"time"', ...quotedTags],
+    groupBy: ['"time"', ...quotedTags, ...rawColumns],
+    orderBy: ['"time"', ...quotedTags, ...rawColumns],
   };
 }
 
 function validMetrics(query: KwdbQuery): MetricSpec[] {
   return (query.metrics ?? []).filter((metric) => Boolean(metric.column?.trim()));
+}
+
+/**
+ * Metric columns selected without an aggregation.
+ *
+ * KWDB rejects a bare column in a grouped SELECT ("column ... must appear in
+ * the GROUP BY clause or be used in an aggregate function"), so these columns
+ * have to be added to the GROUP BY list instead of being dropped. Verified
+ * against KWDB 3.3.0: `GROUP BY "time", "current_val"` is accepted by
+ * time_bucket, time_bucket_gapfill and every window function.
+ */
+function unaggregatedColumns(metrics: MetricSpec[]): string[] {
+  const columns: string[] = [];
+  for (const metric of metrics) {
+    const column = metric.column?.trim() ?? '';
+    if (metric.aggregation === 'none' && column) {
+      const quoted = quoteIdent(column);
+      if (!columns.includes(quoted)) {
+        columns.push(quoted);
+      }
+    }
+  }
+  return columns;
 }
 
 export function buildDownsamplingSql(query: KwdbQuery): string {
@@ -155,7 +182,8 @@ export function buildDownsamplingSql(query: KwdbQuery): string {
     ...tags.map(quoteIdent),
     ...metrics.map(metricExpr),
   ];
-  const { groupBy, orderBy } = groupAndOrderBy(tags);
+  const raw = unaggregatedColumns(metrics);
+  const { groupBy, orderBy } = groupAndOrderBy(tags, raw);
   return [
     ...selectLines(items),
     `FROM ${quoteQualified(table)}`,
@@ -179,7 +207,8 @@ export function buildGapfillSql(query: KwdbQuery): string {
     ...tags.map(quoteIdent),
     ...metrics.map((metric) => gapfillMetricExpr(metric, query)),
   ];
-  const { groupBy, orderBy } = groupAndOrderBy(tags);
+  const raw = unaggregatedColumns(metrics);
+  const { groupBy, orderBy } = groupAndOrderBy(tags, raw);
   return [
     ...selectLines(items),
     `FROM ${quoteQualified(table)}`,
@@ -292,7 +321,10 @@ export function buildWindowSql(query: KwdbQuery): string {
 
   const tags = (query.tags ?? []).map((tag) => tag.trim()).filter(Boolean);
   const items = [`first(${quoteIdent(timeColumn)}) AS "time"`, ...tags.map(quoteIdent), ...metrics.map(metricExpr)];
-  const groupBy = [...tags.map(quoteIdent), windowExpr];
+  // KWDB requires a grouped window function to be the *last* GROUP BY entry:
+  // "no other columns can follow grouped window function". Non-aggregated
+  // metric columns therefore go before the window expression.
+  const groupBy = [...tags.map(quoteIdent), ...unaggregatedColumns(metrics), windowExpr];
   const orderBy = ['"time"', ...tags.map(quoteIdent)];
   return [
     ...selectLines(items),

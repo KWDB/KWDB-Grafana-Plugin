@@ -2,7 +2,7 @@ import React from 'react';
 import { IconButton, Input, Select, Stack } from '@grafana/ui';
 
 import type { ColumnInfo, MetricSpec } from '../../../types';
-import { getAggregationsForColumn } from './aggregations';
+import { type MetricAggregation, getAggregationsForColumn } from './aggregations';
 import { ColumnPicker } from './ColumnPicker';
 
 interface Props {
@@ -12,10 +12,20 @@ interface Props {
   onChange: (metric: MetricSpec) => void;
   onRemove?: () => void;
   hideAggregation?: boolean;
+  /**
+   * Aggregations to leave out of the dropdown. Gapfill uses this to drop
+   * "none": interpolate() requires an aggregate function as its first argument,
+   * so a bare column produces "the first parameter of interpolate must be agg
+   * func" from KWDB.
+   */
+  excludeAggregations?: MetricAggregation[];
 }
 
-export function MetricRow({ index, columns, metric, onChange, onRemove, hideAggregation }: Props) {
-  const aggregations = getAggregationsForColumn(columns, metric.column);
+export function MetricRow({ index, columns, metric, onChange, onRemove, hideAggregation, excludeAggregations }: Props) {
+  const excluded = new Set(excludeAggregations ?? []);
+  const aggregations = getAggregationsForColumn(columns, metric.column).filter(
+    (aggregation) => !excluded.has(aggregation)
+  );
 
   const handleColumnChange = (value: string[]) => {
     const column = value[0] ?? '';

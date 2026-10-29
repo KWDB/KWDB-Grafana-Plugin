@@ -69,6 +69,48 @@ func TestExpandMacros(t *testing.T) {
 			want: "SELECT * FROM t WHERE note = 'a;b' AND (ts >= '2026-01-01 00:00:00'::TIMESTAMP AND ts <= '2026-01-01 01:00:00'::TIMESTAMP)",
 		},
 		{
+			// A macro that only appears inside a literal must be left alone:
+			// expanding it corrupts the string and produces a syntax error.
+			name: "time filter inside a string literal is not expanded",
+			sql:  "SELECT 'range: $__timeFilter(ts)' AS note",
+			want: "SELECT 'range: $__timeFilter(ts)' AS note",
+		},
+		{
+			name: "time from inside a string literal is not expanded",
+			sql:  "SELECT 'from $__timeFrom to $__timeTo' AS note",
+			want: "SELECT 'from $__timeFrom to $__timeTo' AS note",
+		},
+		{
+			name: "macro inside a quoted identifier is not expanded",
+			sql:  `SELECT "$__timeFrom" FROM t`,
+			want: `SELECT "$__timeFrom" FROM t`,
+		},
+		{
+			name: "macro inside a line comment is not expanded",
+			sql:  "SELECT 1 -- see $__timeFilter(ts)\nFROM t WHERE $__timeFilter(ts)",
+			want: "SELECT 1 -- see $__timeFilter(ts)\nFROM t WHERE (ts >= '2026-01-01 00:00:00'::TIMESTAMP AND ts <= '2026-01-01 01:00:00'::TIMESTAMP)",
+		},
+		{
+			name: "macro inside a block comment is not expanded",
+			sql:  "SELECT 1 /* $__timeFrom */ FROM t WHERE k_timestamp >= $__timeFrom",
+			want: "SELECT 1 /* $__timeFrom */ FROM t WHERE k_timestamp >= '2026-01-01 00:00:00'::TIMESTAMP",
+		},
+		{
+			name: "macro inside a dollar-quoted string is not expanded",
+			sql:  "SELECT $$literal $__timeFrom$$, $__timeFrom",
+			want: "SELECT $$literal $__timeFrom$$, '2026-01-01 00:00:00'::TIMESTAMP",
+		},
+		{
+			name: "escaped quote does not end the literal early",
+			sql:  "SELECT 'it''s $__timeFrom' AS note, $__timeFrom",
+			want: "SELECT 'it''s $__timeFrom' AS note, '2026-01-01 00:00:00'::TIMESTAMP",
+		},
+		{
+			name: "macros on both sides of a literal",
+			sql:  "SELECT $__timeFrom AS a, 'x' AS b, $__timeTo AS c",
+			want: "SELECT '2026-01-01 00:00:00'::TIMESTAMP AS a, 'x' AS b, '2026-01-01 01:00:00'::TIMESTAMP AS c",
+		},
+		{
 			name: "no macros",
 			sql:  "SELECT 1",
 			want: "SELECT 1",
