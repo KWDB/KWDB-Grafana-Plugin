@@ -5,7 +5,7 @@ KWDB TSDB Grafana data source plugin.
 
 ## Prerequisites
 
-- Node.js 22 (the repository pins it in `.nvmrc`)
+- Node.js 24 (the repository pins it in `.nvmrc`)
 - Go 1.26 or newer
 - Docker and Docker Compose
 - Yarn 1.22.22 via Corepack

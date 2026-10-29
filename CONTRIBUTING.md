@@ -39,7 +39,7 @@ behavior change.
 
 Prerequisites:
 
-- Node.js 22 (pinned in `.nvmrc`)
+- Node.js 24 (pinned in `.nvmrc`)
 - Go 1.26 or newer
 - Docker with Docker Compose
 - Yarn 1.22.22 via Corepack
