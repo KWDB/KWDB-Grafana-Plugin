@@ -35,7 +35,7 @@
 
 以下事项不阻塞代码合并，但在提交 Grafana 插件目录审核前必须定案：
 
-- **插件 ID 与仓库归属（已定案，2026-10-29）**：插件 ID 定为 `kwdb-datasource`，对应公司 `kwdb` Grafana Cloud 组织；仓库将从个人账号迁移到 `KWDB` GitHub 组织。插件 ID 发布后不可更改，后续不再变更。
+- **插件 ID 与仓库归属（2026-10-29 修订）**：插件 ID 为 `kwdb-tsdb-datasource`，采用校验器要求的 `org-name-type` 三段式。v1.4.0 采用的 `kwdb-datasource` 只有两段，提交目录审核时被判为 `invalid-id-format`，因此改回三段式；`kwdb` 对应公司 Grafana Cloud 组织。仓库将从个人账号迁移到 `KWDB` GitHub 组织。插件 ID 进入目录后不可更改。
 - **签名 token**：`GRAFANA_ACCESS_POLICY_TOKEN` 尚未配置到仓库 Secrets，release 产物目前未签名。首次提交审核可以不带签名，但审核通过后的每个版本都必须签名。
 - **分支保护**：main 目前没有 required status checks / required review，CI 结果只是建议而非门禁。
 

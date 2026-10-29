@@ -10,7 +10,7 @@
   "panels": [
     {
       "datasource": {
-        "type": "kwdb-datasource",
+        "type": "kwdb-tsdb-datasource",
         "uid": "kwdb-tsdb"
       },
       "fieldConfig": {
@@ -48,7 +48,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "kwdb-datasource",
+            "type": "kwdb-tsdb-datasource",
             "uid": "kwdb-tsdb"
           },
           "format": "time_series",
@@ -62,7 +62,7 @@
     },
     {
       "datasource": {
-        "type": "kwdb-datasource",
+        "type": "kwdb-tsdb-datasource",
         "uid": "kwdb-tsdb"
       },
       "fieldConfig": {
@@ -88,7 +88,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "kwdb-datasource",
+            "type": "kwdb-tsdb-datasource",
             "uid": "kwdb-tsdb"
           },
           "format": "table",

@@ -35,7 +35,7 @@ Shipped capabilities: five query editor modes (downsampling, gapfill interpolati
 
 These do not block merging code, but they must be settled before submitting the plugin to the Grafana catalog:
 
-- **Plugin ID and repository ownership (decided 2026-10-29).** The plugin ID is `kwdb-datasource`, backed by the company's `kwdb` Grafana Cloud organization; the repository will move from the personal account to the `KWDB` GitHub organization. The plugin ID cannot be changed after publication, so it will not change again.
+- **Plugin ID and repository ownership (revised 2026-10-29).** The plugin ID is `kwdb-tsdb-datasource`, in the three-part `org-name-type` form the catalog validator requires. v1.4.0 used `kwdb-datasource`, which has only two parts and was rejected with `invalid-id-format` when the version was submitted for review; `kwdb` is the company's Grafana Cloud organization slug. The repository will move from the personal account to the `KWDB` GitHub organization. The plugin ID cannot be changed once it is in the catalog.
 - **Signing token.** `GRAFANA_ACCESS_POLICY_TOKEN` is not configured in the repository secrets, so release artifacts are currently unsigned. The first submission may be unsigned, but every version after approval must be signed.
 - **Branch protection.** main has no required status checks or required review, so CI results are advisory rather than a gate.
 

@@ -32,8 +32,8 @@ This plugin connects [Grafana](https://grafana.com) to KWDB. It executes read-on
 
 ## Installation
 
-- **From the Grafana plugin catalog:** install `kwdb-datasource`, then add a `KWDB TSDB` data source.
-- **With grafana-cli:** `grafana-cli plugins install kwdb-datasource`, then restart Grafana.
+- **From the Grafana plugin catalog:** install `kwdb-tsdb-datasource`, then add a `KWDB TSDB` data source.
+- **With grafana-cli:** `grafana-cli plugins install kwdb-tsdb-datasource`, then restart Grafana.
 - **From a ZIP:** build and sign the plugin, rename `dist` to the plugin ID, create a ZIP, and extract it into Grafana's plugin directory. See the [packaging guide](https://grafana.com/developers/plugin-tools/publish-a-plugin/package-a-plugin).
 
 ## Configuration
@@ -138,7 +138,9 @@ Read-only access is enforced in three layers:
 ## Development and publishing
 
 - See [DEVELOPMENT.md](https://github.com/KWDB/kwdb-grafana-plugin/blob/main/DEVELOPMENT.md) for local development, testing, and packaging instructions.
-- Plugin ID: `kwdb-datasource`; it must match the Grafana Cloud organization slug `kwdb`.
+- Plugin ID: `kwdb-tsdb-datasource`. It follows the `org-name-type` convention the
+  catalog validator enforces (at least three hyphen-separated parts), where
+  `kwdb` is the Grafana Cloud organization slug.
 - First submissions do not require a signature. After review, versions are signed and released through the `Release` GitHub Actions workflow.
 - Full instructions are in the [Grafana plugin publishing guide](https://grafana.com/developers/plugin-tools/publish-a-plugin).
 
