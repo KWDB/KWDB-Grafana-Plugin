@@ -32,8 +32,8 @@ This plugin connects [Grafana](https://grafana.com) to KaiwuDB and its open-sour
 
 ## Installation
 
-- **From the Grafana plugin catalog:** install `lumingsun-kwdbtsdb-datasource`, then add a `KWDB TSDB` data source.
-- **With grafana-cli:** `grafana-cli plugins install lumingsun-kwdbtsdb-datasource`, then restart Grafana.
+- **From the Grafana plugin catalog:** install `kwdb-datasource`, then add a `KWDB TSDB` data source.
+- **With grafana-cli:** `grafana-cli plugins install kwdb-datasource`, then restart Grafana.
 - **From a ZIP:** build and sign the plugin, rename `dist` to the plugin ID, create a ZIP, and extract it into Grafana's plugin directory. See the [packaging guide](https://grafana.com/developers/plugin-tools/publish-a-plugin/package-a-plugin).
 
 ## Configuration
@@ -138,7 +138,7 @@ Read-only access is enforced in three layers:
 ## Development and publishing
 
 - See [DEVELOPMENT.md](https://github.com/LumingSun/KWDB-Grafana-Plugin/blob/master/DEVELOPMENT.md) for local development, testing, and packaging instructions.
-- Plugin ID: `lumingsun-kwdbtsdb-datasource`; it must match the Grafana Cloud organization slug `lumingsun`.
+- Plugin ID: `kwdb-datasource`; it must match the Grafana Cloud organization slug `kwdb`.
 - First submissions do not require a signature. After review, versions are signed and released through the `Release` GitHub Actions workflow.
 - Full instructions are in the [Grafana plugin publishing guide](https://grafana.com/developers/plugin-tools/publish-a-plugin).
 

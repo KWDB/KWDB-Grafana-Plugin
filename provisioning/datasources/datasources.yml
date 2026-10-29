@@ -2,7 +2,7 @@ apiVersion: 1
 
 datasources:
   - name: 'KWDB TSDB'
-    type: 'lumingsun-kwdbtsdb-datasource'
+    type: 'kwdb-datasource'
     uid: 'kwdb-tsdb'
     access: proxy
     isDefault: true

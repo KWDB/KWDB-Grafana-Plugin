@@ -10,7 +10,7 @@
   "panels": [
     {
       "datasource": {
-        "type": "lumingsun-kwdbtsdb-datasource",
+        "type": "kwdb-datasource",
         "uid": "kwdb-tsdb"
       },
       "fieldConfig": {
@@ -48,7 +48,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "lumingsun-kwdbtsdb-datasource",
+            "type": "kwdb-datasource",
             "uid": "kwdb-tsdb"
           },
           "format": "time_series",
@@ -62,7 +62,7 @@
     },
     {
       "datasource": {
-        "type": "lumingsun-kwdbtsdb-datasource",
+        "type": "kwdb-datasource",
         "uid": "kwdb-tsdb"
       },
       "fieldConfig": {
@@ -88,7 +88,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "lumingsun-kwdbtsdb-datasource",
+            "type": "kwdb-datasource",
             "uid": "kwdb-tsdb"
           },
           "format": "table",

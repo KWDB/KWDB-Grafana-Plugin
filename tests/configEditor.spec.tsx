@@ -7,7 +7,7 @@ import type { KwdbDataSourceOptions, KwdbSecureJsonData } from '../src/types';
 
 function makeOptions(overrides: Partial<DataSourceSettings<KwdbDataSourceOptions, KwdbSecureJsonData>> = {}) {
   return {
-    type: 'kwdb-tsdb-datasource',
+    type: 'kwdb-datasource',
     uid: 'kwdb',
     name: 'KWDB TSDB',
     access: 'proxy',
