@@ -19,7 +19,7 @@ welcome.
 
 ## Branches and commits
 
-Create a topic branch from the current `master` and keep each branch scoped to
+Create a topic branch from the current `main` and keep each branch scoped to
 one change:
 
 ```text

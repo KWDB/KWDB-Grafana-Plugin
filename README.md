@@ -8,7 +8,7 @@ Grafana time series or table data.
 > 本插件适用于 KaiwuDB 及其开源版本 KWDB，可以在 Grafana 中查询、展示和分析
 > KWDB 时序数据。
 
-![example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/example.png)
+![example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/example.png)
 
 ## Features
 
@@ -100,7 +100,7 @@ KWDB_HOST=db.example.com KWDB_PORT=26257 KWDB_DATABASE=example_db \
 4. Fill in the connection settings.
 5. Click **Save & test**.
 
-![KWDB Datasource](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/kwdb-datasource.png)
+![KWDB Datasource](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/kwdb-datasource.png)
 
 | Field           | Description                                                                                                               |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -127,7 +127,7 @@ as `sslrootcert`.
 Click **Save & test** to verify connectivity. The backend executes `SELECT 1`
 and reports whether the data source is working.
 
-![test-datasource](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/save-test.png)
+![test-datasource](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/save-test.png)
 
 ## Build a dashboard
 
@@ -159,7 +159,7 @@ more metrics.
 
 Aggregations: `avg`, `sum`, `count`, `min`, `max`, `stddev`, `none`.
 
-![downsampling example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/master/src/img/downsampling-example.png)
+![downsampling example](https://github.com/LumingSun/KWDB-Grafana-Plugin/raw/main/src/img/downsampling-example.png)
 
 ### Gapfill
 

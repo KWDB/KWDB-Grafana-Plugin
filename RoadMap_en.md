@@ -37,9 +37,9 @@ These do not block merging code, but they must be settled before submitting the 
 
 - **Plugin ID and repository ownership (decided 2026-10-29).** The plugin ID is `kwdb-datasource`, backed by the company's `kwdb` Grafana Cloud organization; the repository will move from the personal account to the `KWDB` GitHub organization. The plugin ID cannot be changed after publication, so it will not change again.
 - **Signing token.** `GRAFANA_ACCESS_POLICY_TOKEN` is not configured in the repository secrets, so release artifacts are currently unsigned. The first submission may be unsigned, but every version after approval must be signed.
-- **Branch protection.** master has no required status checks or required review, so CI results are advisory rather than a gate.
+- **Branch protection.** main has no required status checks or required review, so CI results are advisory rather than a gate.
 
-## v1.4.0 — post-release
+## v1.5.0 — post-release
 
 | Item                                                        | Notes                                                                                                                                                                                        |
 | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
